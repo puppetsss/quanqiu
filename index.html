@@ -1,0 +1,2804 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>🐦 鸽子外卖模拟器</title>
+<!-- Nunito 圆润字体（多 CDN 源，确保能加载） -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.loli.net">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.loli.net/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   全局样式 —— 参考 Duolingo：暖黄 / 奶油白 / 亮绿 / 深灰
+   ============================================================ */
+:root{
+  --yellow:#FFC800;
+  --cream:#FFF8E7;
+  --green:#58CC02;
+  --green-dark:#3FA800;
+  --dark:#1A1A2E;
+  --red:#FF4444;
+  --blue:#4A90D9;
+  --white:#FFFFFF;
+  --radius:22px;
+}
+*{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body{ width:100%; height:100%; overflow:hidden; }
+body{
+  /* Nunito 圆润字体优先，中文回退系统字体 */
+  font-family:'Nunito','Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;
+  background:var(--dark);
+  color:var(--dark);
+  user-select:none;
+}
+#app{ position:fixed; inset:0; }
+#stage{ position:absolute; inset:0; }
+#stage canvas{ display:block; touch-action:none; cursor:grab; }
+#stage canvas:active{ cursor:grabbing; }
+
+.hidden{ display:none !important; }
+
+/* ---------------- 配送订单栏（外卖平台风格：上动画 / 下订单） ---------------- */
+#app{ display:flex; flex-direction:column; }
+#stage{ transition:bottom 0.35s ease; }
+#app.delivering #stage{ bottom:38vh; }
+@media (max-width:640px){ #app.delivering #stage{ bottom:44vh; } }
+
+#deliveryPanel{
+  position:absolute; left:0; right:0; bottom:0; height:38vh; z-index:25;
+  background:var(--white);
+  border-top:3px solid var(--dark);
+  display:flex; flex-direction:column;
+  box-shadow:0 -6px 0 rgba(26,26,46,0.35);
+  font-size:14px;
+  animation:panelUp 0.35s cubic-bezier(.2,1.4,.4,1);
+}
+@media (max-width:640px){ #deliveryPanel{ height:44vh; } }
+@keyframes panelUp{ from{ transform:translateY(100%); } to{ transform:translateY(0); } }
+/* 顶部状态条 */
+.dp-statusbar{
+  display:flex; align-items:center; justify-content:space-between;
+  background:var(--dark); color:var(--cream);
+  padding:8px 14px; font-weight:800; font-size:14px;
+}
+.dp-status-left{ display:flex; align-items:center; gap:8px; }
+.dp-anim-dot{
+  width:10px; height:10px; border-radius:50%;
+  background:var(--green);
+  animation:blink 1s ease-in-out infinite;
+}
+@keyframes blink{ 0%,100%{ opacity:1; } 50%{ opacity:0.25; } }
+.dp-clock{ font-size:12.5px; color:var(--yellow); }
+/* 店铺行 */
+.dp-shop{ display:flex; align-items:center; gap:10px; padding:10px 14px 6px; }
+.dp-shop-logo{
+  width:40px; height:40px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:24px;
+  background:var(--cream); border:2px solid var(--dark); border-radius:10px;
+}
+.dp-shop-mid{ flex:1; min-width:0; }
+.dp-shop-name{ font-weight:900; font-size:15px; }
+.dp-shop-meta{ font-size:12px; color:#8A8A9A; margin-top:1px; }
+.dp-shop-arrow{ font-size:20px; color:#B9B9C9; }
+/* 订单明细 */
+.dp-items{ padding:2px 14px 4px; border-bottom:1px dashed #E0E0E0; max-height:10vh; overflow-y:auto; }
+.dp-item{ display:flex; align-items:center; gap:8px; padding:5px 0; }
+.dp-item-emoji{ font-size:20px; }
+.dp-item-name{ flex:1; font-weight:700; }
+.dp-item-qty{ color:#8A8A9A; font-size:12.5px; }
+.dp-item-price{ font-weight:900; color:#FF5339; }
+/* 配送信息 */
+.dp-meta{ padding:6px 14px 4px; }
+.dp-meta-row{ font-size:13px; color:#666; font-weight:600; margin:2px 0; line-height:1.5; }
+.dp-meta-row b{ color:var(--dark); font-weight:800; }
+/* 配送中进度条（真实路程进度 0~100%） */
+.dp-progress-row{ display:flex; align-items:center; gap:10px; margin:8px 14px 10px; }
+.dp-progress{
+  flex:1;
+  height:12px; border-radius:6px;
+  background:#F0F0F0; border:2px solid var(--dark);
+  overflow:hidden;
+}
+.dp-progress-fill{
+  height:100%; width:0%;
+  border-radius:4px;
+  background:linear-gradient(90deg,var(--yellow),var(--green));
+  transition:width 0.5s linear;
+}
+.dp-pct{
+  font-weight:900; font-size:14px; color:var(--green-dark);
+  min-width:42px; text-align:right;
+}
+/* 取消配送按钮 */
+.dp-cancel{
+  margin:0 14px 12px;
+  font-family:inherit; font-weight:900; font-size:15px;
+  min-height:46px;
+  background:var(--red); color:#fff;
+  border:3px solid var(--dark);
+  border-radius:12px;
+  box-shadow:0 4px 0 #B02B2B;
+  cursor:pointer;
+}
+.dp-cancel:active{ transform:translateY(3px); box-shadow:none; }
+
+/* ---------------- 底部累计信息 ---------------- */
+#bottomInfo{
+  position:absolute; left:50%; transform:translateX(-50%);
+  bottom:14px; z-index:20;
+  background:rgba(26,26,46,0.85);
+  color:var(--cream);
+  font-weight:800; font-size:14px;
+  padding:8px 18px; border-radius:999px;
+  white-space:nowrap;
+  pointer-events:none;
+}
+#bottomInfo b{ color:var(--yellow); font-size:16px; }
+
+/* ---------------- 事件横幅 ---------------- */
+#eventBanner{
+  position:absolute; left:50%; top:18%; transform:translateX(-50%);
+  z-index:30;
+  background:var(--red); color:#fff;
+  font-weight:900; font-size:clamp(14px,3.4vw,22px);
+  padding:12px 24px; border-radius:18px;
+  border:3px solid var(--dark);
+  box-shadow:0 5px 0 rgba(26,26,46,0.6);
+  animation:bannerPop 0.35s ease;
+  text-align:center; max-width:90vw;
+}
+@keyframes bannerPop{ from{ transform:translateX(-50%) scale(0.6); opacity:0; } to{ transform:translateX(-50%) scale(1); opacity:1; } }
+
+/* ---------------- 文字气泡（Zzz / XX / 爱心） ---------------- */
+#bubble{
+  position:absolute; left:0; top:0; z-index:30;
+  font-weight:900; font-size:26px; color:var(--dark);
+  background:var(--cream); border:3px solid var(--dark);
+  border-radius:16px; padding:6px 12px;
+  box-shadow:0 4px 0 rgba(26,26,46,0.5);
+  transform:translate(-50%,-130%);
+  animation:bob 1.2s ease-in-out infinite;
+  pointer-events:none; white-space:nowrap;
+}
+@keyframes bob{ 0%,100%{ margin-top:0; } 50%{ margin-top:-8px; } }
+
+/* ---------------- 弹窗通用 ---------------- */
+.modal{
+  position:absolute; inset:0; z-index:40;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(26,26,46,0.55);
+  backdrop-filter:blur(4px);
+  -webkit-backdrop-filter:blur(4px);
+  animation:fadeIn 0.25s ease;
+}
+@keyframes fadeIn{ from{ opacity:0; } to{ opacity:1; } }
+.modal-card{
+  position:relative;
+  background:var(--white);
+  border:4px solid var(--dark);
+  border-radius:26px;
+  box-shadow:0 10px 0 rgba(26,26,46,0.85);
+  padding:22px;
+  width:min(92vw,880px);
+  max-height:88vh;
+  overflow-y:auto;
+  animation:cardIn 0.3s cubic-bezier(.2,1.6,.4,1);
+}
+@keyframes cardIn{ from{ transform:scale(0.7) translateY(30px); opacity:0; } to{ transform:scale(1) translateY(0); opacity:1; } }
+.modal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.modal-head h2{ font-size:clamp(18px,4vw,26px); font-weight:900; }
+.modal-close{
+  font-family:inherit; font-weight:900; font-size:18px;
+  min-width:44px; min-height:44px;
+  background:var(--cream); border:3px solid var(--dark);
+  border-radius:14px; cursor:pointer; color:var(--dark);
+}
+.modal-close:active{ transform:translateY(2px); }
+
+/* ---------------- 点单弹窗（外卖软件风格） ---------------- */
+.takeout{
+  display:flex; flex-direction:column;
+  background:var(--white);
+  border:3px solid var(--dark);
+  border-radius:20px;
+  width:min(94vw,460px);
+  max-height:88vh;
+  overflow:hidden;
+  box-shadow:0 8px 0 rgba(26,26,46,0.8);
+  animation:cardIn 0.3s cubic-bezier(.2,1.6,.4,1);
+}
+/* 顶部定位条 */
+.to-header{
+  display:flex; align-items:center; justify-content:space-between;
+  background:var(--dark);
+  color:var(--cream);
+  padding:10px 14px;
+  font-size:15px;
+}
+.to-addr{ font-weight:700; }
+.to-addr b{ color:var(--yellow); }
+.to-shop-tag{ font-size:12px; color:#B9B9C9; margin-left:6px; }
+.to-header .modal-close{ min-width:36px; min-height:36px; font-size:14px; }
+/* 店铺横幅 */
+.to-banner{
+  display:flex; align-items:center; gap:12px;
+  padding:14px 16px;
+  background:var(--cream);
+  border-bottom:2px solid #E8E0CC;
+}
+.to-banner-flag{
+  font-size:38px;
+  width:56px; height:56px;
+  display:flex; align-items:center; justify-content:center;
+  background:#fff; border:2px solid var(--dark); border-radius:14px;
+}
+.to-shop-name{ font-weight:800; font-size:18px; }
+.to-shop-meta{ font-size:12px; color:#8A8A9A; margin-top:2px; }
+/* 菜品列表 */
+.to-list{
+  flex:1;
+  overflow-y:auto;
+  background:#fff;
+}
+.to-item{
+  display:flex; align-items:center; gap:12px;
+  padding:12px 14px;
+  border-bottom:1px solid #F0F0F0;
+  cursor:pointer;
+  transition:background 0.12s;
+}
+.to-item:active{ background:#F7F7F7; }
+.to-item.selected{ background:#F2FBE8; }
+.to-emoji{
+  width:52px; height:52px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:30px;
+  background:#F5F5F5; border-radius:10px;
+}
+.to-info{ flex:1; min-width:0; }
+.to-name{ font-weight:700; font-size:16px; }
+.to-desc{ font-size:12px; color:#999; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.to-price{ font-weight:800; color:#FF5339; font-size:16px; margin-top:4px; }
+.to-price small{ font-size:12px; }
+.to-add{
+  width:32px; height:32px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:20px; font-weight:700;
+  background:var(--green); color:#fff;
+  border-radius:50%;
+  border:2px solid var(--dark);
+}
+.to-item.selected .to-add{ background:var(--green); }
+/* 购物车数量控件（− 数量 ＋） */
+.to-qty{
+  flex-shrink:0;
+  display:flex; align-items:center; gap:8px;
+}
+.to-qty-btn{
+  width:30px; height:30px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:18px; font-weight:800;
+  border-radius:50%; cursor:pointer;
+  border:2px solid var(--dark);
+  background:var(--cream); color:var(--dark);
+}
+.to-qty-btn.plus{ background:var(--green); color:#fff; }
+.to-qty-num{ font-weight:900; font-size:16px; min-width:18px; text-align:center; }
+/* 底部结算栏 */
+.to-footer{
+  display:flex; align-items:center; gap:12px;
+  padding:10px 14px;
+  background:var(--white);
+  border-top:2px solid #EEE;
+}
+.to-total{ flex:1; font-size:14px; color:#666; font-weight:600; }
+.to-total b{ color:var(--dark); font-size:16px; }
+.to-order{
+  width:auto; min-width:150px;
+  font-weight:800; font-size:16px;
+  min-height:46px;
+  background:var(--green); color:#fff;
+  border:2px solid var(--dark);
+  border-radius:12px;
+  box-shadow:0 3px 0 var(--green-dark);
+  cursor:pointer;
+}
+.to-order:disabled{ background:#C9C9C9; box-shadow:0 3px 0 #9A9A9A; cursor:not-allowed; }
+.to-order:not(:disabled):active{ transform:translateY(2px); box-shadow:none; }
+
+/* ---------------- 过渡动画 ---------------- */
+#transitionOverlay{
+  position:absolute; inset:0; z-index:35;
+  background:var(--cream);
+  display:flex; align-items:center; justify-content:center;
+  animation:fadeIn 0.3s ease;
+}
+.t-text{
+  font-weight:900; font-size:clamp(18px,5vw,34px); color:var(--dark);
+  text-align:center; line-height:1.5; padding:0 20px;
+  animation:prep 1s ease-in-out infinite;
+}
+@keyframes prep{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.06); } }
+
+/* ---------------- 全屏彩带雨（成功庆祝） ---------------- */
+#confetti{
+  position:fixed; inset:0; z-index:45;
+  width:100%; height:100%;
+  pointer-events:none;
+  display:none;
+}
+#confetti.on{ display:block; }
+
+/* ---------------- 结果弹窗 ---------------- */
+#resultModal{ background:rgba(26,26,46,0.45); }   /* 半透明，让背后3D鸽子群可见 */
+#fireworks{ position:absolute; inset:0; width:100%; height:100%; }
+.result-card{ width:min(92vw,520px); text-align:center; }
+.result-title{ font-size:clamp(26px,6vw,40px); font-weight:900; margin-bottom:4px; }
+.result-title.boom{ animation:boomPop 0.7s cubic-bezier(.2,1.9,.4,1); }
+@keyframes boomPop{
+  0%{ transform:scale(0.1) rotate(-12deg); opacity:0; }
+  55%{ transform:scale(1.3) rotate(4deg); opacity:1; }
+  75%{ transform:scale(0.92) rotate(-2deg); }
+  100%{ transform:scale(1) rotate(0); }
+}
+.result-sub{ font-weight:700; color:#6A6A7A; margin-bottom:12px; }
+.recap{
+  background:var(--cream); border:3px solid var(--dark); border-radius:16px;
+  padding:10px 14px; margin-bottom:14px; text-align:left;
+}
+.recap-title{ font-weight:900; font-size:14px; margin-bottom:6px; color:var(--dark); }
+.recap li{ font-weight:700; font-size:14px; list-style:none; margin:4px 0; }
+.rewards{ display:flex; gap:12px; margin-bottom:14px; }
+.reward{
+  flex:1;
+  background:var(--cream); border:3px solid var(--dark); border-radius:16px;
+  padding:12px 6px;
+}
+.r-icon{ font-size:26px; }
+.r-num{ font-weight:900; font-size:clamp(20px,5vw,28px); color:var(--green-dark); margin:4px 0; }
+.r-label{ font-weight:700; font-size:12px; color:#6A6A7A; }
+.achievement{
+  font-weight:900; font-size:15px; color:var(--dark);
+  background:var(--yellow); border:3px solid var(--dark); border-radius:14px;
+  padding:8px; margin-bottom:14px;
+}
+
+/* ---------------- 特效层：闪白 / 星空漩涡 ---------------- */
+#flash{
+  position:absolute; inset:0; z-index:50; background:#fff;
+  opacity:0; pointer-events:none; transition:opacity 0.18s ease;
+}
+#flash.on{ opacity:1; }
+#vortex{
+  position:absolute; inset:0; z-index:49; pointer-events:none;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(80,60,180,0.15), rgba(10,6,40,0.92) 70%),
+    #0A0628;
+  opacity:0; transition:opacity 0.3s ease;
+  overflow:hidden;
+}
+#vortex.on{ opacity:1; }
+#vortex::before{
+  content:'';
+  position:absolute; left:50%; top:50%;
+  width:220vmax; height:220vmax;
+  margin-left:-110vmax; margin-top:-110vmax;
+  background:repeating-conic-gradient(
+    from 0deg,
+    rgba(150,120,255,0.10) 0deg 12deg,
+    rgba(90,70,220,0.22) 12deg 24deg,
+    transparent 24deg 60deg
+  );
+  border-radius:50%;
+  animation:spin 14s linear infinite;
+}
+#vortex::after{
+  content:'✦ ✧ ✦ ✧ ✦';
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  font-size:120px; color:rgba(255,255,255,0.85);
+  letter-spacing:30px; animation:spinRev 30s linear infinite;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
+@keyframes spinRev{ to{ transform:translate(-50%,-50%) rotate(-360deg); } }
+
+/* ---------------- 移动端适配 ---------------- */
+@media (max-width:640px){
+  .takeout{ width:96vw; }
+  #deliveryPanel{ top:10px; right:10px; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Three.js 场景容器 -->
+  <div id="stage"></div>
+
+  <!-- 配送订单栏（外卖平台风格：上方3D飞行动画，下方订单信息） -->
+  <div id="deliveryPanel" class="hidden">
+    <div class="dp-statusbar">
+      <div class="dp-status-left"><span class="dp-anim-dot"></span>鸽子正在配送中</div>
+      <div class="dp-clock" id="dpClock">已配送 0 分 0 秒</div>
+    </div>
+    <div class="dp-shop">
+      <div class="dp-shop-logo" id="dpShopLogo">🇨🇳</div>
+      <div class="dp-shop-mid">
+        <div class="dp-shop-name" id="dpShop">中国美食城</div>
+        <div class="dp-shop-meta" id="dpShopMeta">好评率 99% · 鸽子配送</div>
+      </div>
+      <div class="dp-shop-arrow">›</div>
+    </div>
+    <div class="dp-items" id="dpItems"></div>
+    <div class="dp-meta">
+      <div class="dp-meta-row">🏠 收货地址　<b>中国</b></div>
+      <div class="dp-meta-row">🏁 配送终点　<b id="dpDest">中国（即将送达…）</b></div>
+      <div class="dp-meta-row">💰 合计应付　<b id="dpPrice">¥0.00</b></div>
+      <div class="dp-meta-row">🐦 鸽子位置　<b id="dpLoc">正在飞越太平洋……</b></div>
+    </div>
+    <div class="dp-progress-row">
+      <div class="dp-progress"><div class="dp-progress-fill" id="dpProgressFill"></div></div>
+      <span class="dp-pct" id="dpPct">0%</span>
+    </div>
+    <button id="cancelDeliveryBtn" class="dp-cancel">✋ 取消配送（忍住不吃）</button>
+  </div>
+
+  <!-- 底部累计信息 -->
+  <div id="bottomInfo">🐦 已帮助用户避免 <b id="calTotal">0</b> 卡路里</div>
+
+  <!-- 浮动文字气泡（Zzz / XX / 💕） -->
+  <div id="bubble" class="hidden"></div>
+
+  <!-- 事件横幅 -->
+  <div id="eventBanner" class="hidden"></div>
+
+  <!-- 点单弹窗（外卖软件风格） -->
+  <div id="foodModal" class="modal hidden">
+    <div class="takeout">
+      <div class="to-header">
+        <div class="to-addr">📍 <b id="toAddr">中国</b><span class="to-shop-tag">鸽子国际外卖</span></div>
+        <button class="modal-close" id="foodClose">✕</button>
+      </div>
+      <div class="to-banner">
+        <div class="to-banner-flag" id="toBannerFlag">🇨🇳</div>
+        <div>
+          <div class="to-shop-name" id="toShopName">中国美食城</div>
+          <div class="to-shop-meta" id="toShopMeta">好评率 99% · 鸽子配送 150~200 秒</div>
+        </div>
+      </div>
+      <div class="to-list" id="foodGrid"></div>
+      <div class="to-footer">
+        <div class="to-total">已选 <b id="toCount">0</b> 件 · 合计 <b id="toTotalPrice">¥0.00</b></div>
+        <button id="orderBtn" class="to-order" disabled>去结算</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 过渡动画：鸽子已接单 -->
+  <div id="transitionOverlay" class="hidden">
+    <div class="t-text">🐦 鸽子已接单！正在准备起飞……</div>
+  </div>
+
+  <!-- 全屏彩带雨（成功庆祝，置于弹窗之上） -->
+  <canvas id="confetti"></canvas>
+
+  <!-- 结果弹窗（成功/失败，含烟花背景） -->
+  <div id="resultModal" class="modal hidden">
+    <canvas id="fireworks"></canvas>
+    <div class="modal-card result-card">
+      <h2 class="result-title" id="resultTitle">🎉 恭喜你！</h2>
+      <p class="result-sub" id="resultSub"></p>
+      <div class="recap" id="recapBox">
+        <div class="recap-title">📋 配送过程回顾</div>
+        <ul id="eventRecap"></ul>
+      </div>
+      <div class="rewards" id="rewardsBox">
+        <div class="reward">
+          <div class="r-icon">🔥</div>
+          <div class="r-num" id="rewardCal">0</div>
+          <div class="r-label">少摄入（卡路里）</div>
+        </div>
+        <div class="reward">
+          <div class="r-icon">💰</div>
+          <div class="r-num" id="rewardMoney">¥0.00</div>
+          <div class="r-label">少花（金额）</div>
+        </div>
+      </div>
+      <div class="achievement" id="achievementBox">🏅 成就达成：鸽子外卖体验师</div>
+      <button id="againBtn" class="btn-primary">再来一单</button>
+    </div>
+  </div>
+
+  <!-- 特效层 -->
+  <div id="flash"></div>
+  <div id="vortex"></div>
+</div>
+
+<!-- Three.js 通过 CDN 加载（含备用源） -->
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>window.THREE||document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');</script>
+<script>
+/* ============================================================
+ * 鸽子外卖模拟器 —— 主程序
+ * 技术栈：Three.js(CDN) + 原生 JS + Canvas(烟花)
+ * ============================================================ */
+'use strict';
+
+/* ==================== 数据层 ==================== */
+
+/** 国家数据：35 国，坐标用真实经纬度，cc 为国旗图片代码，color 为标记/旗帜兜底色 */
+const COUNTRIES = {
+  china:        { key:'china',        name:'中国',   cc:'cn', flag:'🇨🇳', color:0xFF4444, lat:35,   lon:105  },
+  japan:        { key:'japan',        name:'日本',   cc:'jp', flag:'🇯🇵', color:0xFF6B6B, lat:36,   lon:138  },
+  korea:        { key:'korea',        name:'韩国',   cc:'kr', flag:'🇰🇷', color:0x5B8CFF, lat:36,   lon:128  },
+  thailand:     { key:'thailand',     name:'泰国',   cc:'th', flag:'🇹🇭', color:0xE25C8A, lat:14,   lon:101  },
+  vietnam:      { key:'vietnam',      name:'越南',   cc:'vn', flag:'🇻🇳', color:0xE23B3B, lat:16,   lon:106  },
+  india:        { key:'india',        name:'印度',   cc:'in', flag:'🇮🇳', color:0xFF8C42, lat:22,   lon:78   },
+  singapore:    { key:'singapore',    name:'新加坡', cc:'sg', flag:'🇸🇬', color:0xD33C3C, lat:1.3,  lon:103.8},
+  malaysia:     { key:'malaysia',     name:'马来西亚', cc:'my', flag:'🇲🇾', color:0x4A6FD9, lat:4,   lon:102  },
+  indonesia:    { key:'indonesia',    name:'印尼',   cc:'id', flag:'🇮🇩', color:0xC0392B, lat:-2,   lon:118  },
+  philippines:  { key:'philippines',  name:'菲律宾', cc:'ph', flag:'🇵🇭', color:0x3B6FD9, lat:13,   lon:122  },
+  turkiye:      { key:'turkiye',      name:'土耳其', cc:'tr', flag:'🇹🇷', color:0xD93025, lat:39,   lon:35   },
+  uae:          { key:'uae',          name:'阿联酋', cc:'ae', flag:'🇦🇪', color:0x2E9E4F, lat:24,   lon:54   },
+  france:       { key:'france',       name:'法国',   cc:'fr', flag:'🇫🇷', color:0x4A90D9, lat:46,   lon:2    },
+  uk:           { key:'uk',           name:'英国',   cc:'gb', flag:'🇬🇧', color:0x3A6FB0, lat:54,   lon:-2   },
+  italy:        { key:'italy',        name:'意大利', cc:'it', flag:'🇮🇹', color:0x50C878, lat:42,   lon:12.5 },
+  germany:      { key:'germany',      name:'德国',   cc:'de', flag:'🇩🇪', color:0xE0B02A, lat:51,   lon:10   },
+  spain:        { key:'spain',        name:'西班牙', cc:'es', flag:'🇪🇸', color:0xC9A227, lat:40,   lon:-3.7 },
+  portugal:     { key:'portugal',     name:'葡萄牙', cc:'pt', flag:'🇵🇹', color:0x2E9E4F, lat:39.5, lon:-8   },
+  netherlands:  { key:'netherlands',  name:'荷兰',   cc:'nl', flag:'🇳🇱', color:0xE2601B, lat:52,   lon:5.5  },
+  greece:       { key:'greece',       name:'希腊',   cc:'gr', flag:'🇬🇷', color:0x4A90D9, lat:39,   lon:22   },
+  switzerland:  { key:'switzerland',  name:'瑞士',   cc:'ch', flag:'🇨🇭', color:0xD93025, lat:46.8, lon:8.2  },
+  russia:       { key:'russia',       name:'俄罗斯', cc:'ru', flag:'🇷🇺', color:0x5B7FD9, lat:55,   lon:37   },
+  usa:          { key:'usa',          name:'美国',   cc:'us', flag:'🇺🇸', color:0xFFD700, lat:39,   lon:-98  },
+  canada:       { key:'canada',       name:'加拿大', cc:'ca', flag:'🇨🇦', color:0xD93025, lat:56,   lon:-106 },
+  mexico:       { key:'mexico',       name:'墨西哥', cc:'mx', flag:'🇲🇽', color:0x2E9E4F, lat:23,   lon:-102 },
+  brazil:       { key:'brazil',       name:'巴西',   cc:'br', flag:'🇧🇷', color:0x2E9E4F, lat:-15,  lon:-47  },
+  argentina:    { key:'argentina',    name:'阿根廷', cc:'ar', flag:'🇦🇷', color:0x7EB6E0, lat:-34,  lon:-64  },
+  peru:         { key:'peru',         name:'秘鲁',   cc:'pe', flag:'🇵🇪', color:0xD93025, lat:-10,  lon:-76  },
+  cuba:         { key:'cuba',         name:'古巴',   cc:'cu', flag:'🇨🇺', color:0x4A90D9, lat:21.5, lon:-80  },
+  australia:    { key:'australia',    name:'澳大利亚', cc:'au', flag:'🇦🇺', color:0x1B5EA6, lat:-25, lon:133  },
+  newzealand:   { key:'newzealand',   name:'新西兰', cc:'nz', flag:'🇳🇿', color:0x2E4E8C, lat:-41, lon:174  },
+  egypt:        { key:'egypt',        name:'埃及',   cc:'eg', flag:'🇪🇬', color:0xC9A227, lat:26,   lon:30   },
+  southafrica:  { key:'southafrica',  name:'南非',   cc:'za', flag:'🇿🇦', color:0x2E9E4F, lat:-29,  lon:24   },
+  morocco:      { key:'morocco',      name:'摩洛哥', cc:'ma', flag:'🇲🇦', color:0xD93025, lat:31,   lon:-7   },
+  nigeria:      { key:'nigeria',      name:'尼日利亚', cc:'ng', flag:'🇳🇬', color:0x2E9E4F, lat:9,   lon:8    },
+};
+const COUNTRY_LIST = Object.values(COUNTRIES);
+
+/** 200 种美食：每国 [菜名, 价格¥, 卡路里, emoji, 描述]（中国10道 + 20国×6 + 14国×5） */
+const COUNTRY_FOODS = {
+  china: [
+    ['炸鸡腿', 15, 450, '🍗', '招牌必点 · 外酥里嫩'],
+    ['麻辣烫', 28, 550, '🍲', '万物皆可烫 · 麻辣过瘾'],
+    ['烤冷面', 12, 380, '🍜', '街头人气 · 鸡蛋火腿'],
+    ['螺蛳粉', 18, 520, '🍜', '闻着臭吃着香 · 加臭加辣'],
+    ['淀粉肠', 6, 220, '🌭', '童年回忆 · 烤到开花'],
+    ['炸串', 25, 480, '🍢', '深夜食堂 · 秘制撒料'],
+    ['黄焖鸡米饭', 22, 600, '🍛', '汤汁拌饭 · 一绝'],
+    ['兰州拉面', 16, 480, '🍜', '一清二白 · 牛骨浓汤'],
+    ['煎饼果子', 10, 350, '🥞', '脆饼薄脆 · 加蛋加肠'],
+    ['酸辣粉', 14, 420, '🍜', '酸辣开胃 · 红薯粉'],
+  ],
+  japan: [
+    ['寿司拼盘', 88, 450, '🍣', '当日鲜鱼 · 入口即化'],
+    ['豚骨拉面', 42, 680, '🍜', '浓汤溏心蛋 · 大火熬制'],
+    ['天妇罗定食', 55, 520, '🍤', '外酥里嫩 · 大虾时蔬'],
+    ['章鱼烧', 18, 380, '🐙', '大阪风味 · 木鱼花'],
+    ['鳗鱼饭', 68, 600, '🍱', '蒲烧鳗鱼 · 酱香四溢'],
+    ['日式咖喱猪排饭', 45, 720, '🍛', '酥脆猪排 · 浓郁咖喱'],
+  ],
+  korea: [
+    ['韩式炸鸡', 38, 560, '🍗', '甜辣双拼 · 双倍酥脆'],
+    ['石锅拌饭', 30, 560, '🍚', '滋滋锅巴 · 溏心蛋'],
+    ['部队火锅', 68, 680, '🍲', '泡面午餐肉 · 罪恶组合'],
+    ['泡菜炒饭', 22, 430, '🍛', '酸辣开胃 · 煎蛋'],
+    ['韩式烤肉', 88, 780, '🥩', '炭火烤五花 · 包菜吃'],
+    ['辣炒年糕', 24, 460, '🍢', '甜辣软糯 · 鱼饼'],
+  ],
+  thailand: [
+    ['冬阴功汤', 42, 300, '🍤', '酸辣鲜香 · 大虾'],
+    ['泰式炒河粉', 28, 480, '🍜', '锅气十足 · 花生碎'],
+    ['芒果糯米饭', 25, 380, '🥭', '香甜软糯 · 椰浆'],
+    ['绿咖喱鸡', 38, 450, '🍛', '椰香浓郁 · 微辣'],
+    ['泰式菠萝炒饭', 32, 520, '🍍', '果香四溢 · 腰果'],
+    ['泰式奶茶', 14, 250, '🧋', '冰爽丝滑 · 手标茶'],
+  ],
+  vietnam: [
+    ['越南河粉', 32, 420, '🍜', '牛肉汤清 · 罗勒柠檬'],
+    ['越南春卷', 20, 260, '🥗', '米皮裹鲜蔬 · 虾仁'],
+    ['越式法棍', 18, 380, '🥖', '脆皮夹肉 · 酸萝卜'],
+    ['越南滴漏咖啡', 16, 180, '☕', '慢滴浓香 · 炼乳'],
+    ['甘蔗虾', 28, 340, '🍤', '清甜多汁 · 配鱼露'],
+    ['越式牛肉粉卷', 26, 400, '🥟', '手工粉皮 · 鲜嫩'],
+  ],
+  india: [
+    ['黄油咖喱鸡', 38, 520, '🍛', '玛莎拉香 · 配馕'],
+    ['印度飞饼', 16, 280, '🫓', '香脆多层 · 香蕉'],
+    ['鸡肉比尔亚尼', 45, 650, '🍚', '香料米饭 · 藏红花'],
+    ['玛莎拉奶茶', 12, 180, '☕', '香料奶茶 · 暖胃'],
+    ['坦都里烤鸡', 48, 560, '🍗', '酸奶腌制 · 炭火香'],
+    ['印度脆球', 15, 200, '🧆', '空心脆球 · 酸辣水'],
+  ],
+  singapore: [
+    ['海南鸡饭', 42, 520, '🍗', '嫩滑白切 · 油饭'],
+    ['辣椒螃蟹', 128, 650, '🦀', '甜辣酱汁 · 馒头蘸'],
+    ['肉骨茶', 38, 480, '🍖', '胡椒药膳 · 油条'],
+    ['叻沙', 36, 560, '🍜', '椰浆辣汤 · 大虾'],
+    ['咖椰吐司', 15, 320, '🍞', '咖椰酱 · 半熟蛋'],
+    ['福建炒虾面', 34, 480, '🍤', '虾头汤底 · 弹面'],
+  ],
+  malaysia: [
+    ['椰浆饭', 28, 480, '🍛', '椰香米饭 · 参巴酱'],
+    ['沙爹肉串', 26, 420, '🍢', '花生酱蘸 · 炭烤'],
+    ['槟城炒粿条', 30, 460, '🍜', '大火锅气 · 鲜虾'],
+    ['娘惹糕', 14, 280, '🍰', '斑斓香 · 软糯'],
+    ['拉茶', 12, 200, '🧋', '拉出泡沫 · 香浓'],
+  ],
+  indonesia: [
+    ['印尼炒饭', 28, 480, '🍛', '甜酱油 · 炸鸡'],
+    ['沙嗲烤串', 24, 400, '🍢', '花生酱 · 蕉叶'],
+    ['巴东牛肉', 42, 560, '🍖', '香料慢炖 · 椰浆'],
+    ['印尼炸鸡', 26, 440, '🍗', '香茅腌制'],
+    ['珍多冰', 15, 300, '🍧', '椰奶 · 绿粉条'],
+  ],
+  philippines: [
+    ['菲律宾烤乳猪', 68, 720, '🍖', '脆皮多汁'],
+    ['阿斗波炖肉', 36, 520, '🍗', '酱油醋 · 蒜香'],
+    ['菲律宾炒面', 22, 420, '🍜', '蒜香炒面'],
+    ['哈啰哈啰', 18, 340, '🍧', '刨冰 · 五彩配料'],
+    ['香蕉春卷', 12, 260, '🥟', '焦糖香蕉'],
+  ],
+  turkiye: [
+    ['土耳其烤肉卷', 35, 560, '🌯', '旋转烤肉 · 酸奶酱'],
+    ['土耳其披萨', 28, 460, '🍕', '船形 · 肉馅'],
+    ['土耳其软糖', 20, 320, '🍬', '玫瑰香 · 坚果'],
+    ['土耳其烤饼', 14, 300, '🫓', '香脆 · 芝麻'],
+    ['鹰嘴豆泥', 18, 280, '🥣', '橄榄油 · 皮塔'],
+    ['土耳其红茶', 10, 120, '🍵', '郁金香杯 · 方糖'],
+  ],
+  uae: [
+    ['阿拉伯烤肉拼盘', 88, 680, '🥩', '羊肉鸡肉 · 米饭'],
+    ['沙威玛', 30, 480, '🌯', '蒜酱 · 卷饼'],
+    ['鹰嘴豆泥配皮塔', 20, 300, '🥣', '芝麻酱'],
+    ['阿拉伯甜点', 26, 380, '🍮', '坚果蜜糖'],
+    ['骆驼奶巧克力', 45, 420, '🍫', '沙漠特色'],
+    ['阿拉伯咖啡', 18, 150, '☕', '豆蔻香 · 椰枣'],
+  ],
+  france: [
+    ['法式可颂', 18, 280, '🥐', '黄油酥皮'],
+    ['马卡龙', 15, 120, '🍪', '少女心'],
+    ['法式鹅肝', 128, 480, '🦆', '入口即化'],
+    ['法式洋葱汤', 32, 350, '🧅', '芝士拉丝'],
+    ['蜗牛焗菜', 58, 300, '🐌', '蒜香黄油'],
+    ['法式薄饼', 25, 380, '🥞', '可丽饼 · 巧克力'],
+  ],
+  uk: [
+    ['炸鱼薯条', 45, 620, '🐟', '啤酒面糊'],
+    ['英式早餐', 38, 550, '🍳', '全餐'],
+    ['牧羊人派', 40, 480, '🥧', '肉酱土豆泥'],
+    ['司康饼', 16, 320, '🫓', '下午茶'],
+    ['约克布丁', 22, 280, '🥧', '配肉汁'],
+    ['英式下午茶', 68, 450, '☕', '三层架'],
+  ],
+  italy: [
+    ['玛格丽特披萨', 45, 850, '🍕', '番茄罗勒'],
+    ['番茄意面', 32, 600, '🍝', '手工面'],
+    ['提拉米苏', 22, 380, '🍰', '咖啡甜'],
+    ['千层面', 42, 720, '🍽️', '肉酱芝士'],
+    ['海鲜烩饭', 58, 650, '🍚', '藏红花'],
+    ['意式冰淇淋', 15, 280, '🍦', '开心果'],
+  ],
+  germany: [
+    ['德式香肠拼盘', 48, 560, '🌭', '啤酒伴侣'],
+    ['德国猪肘', 72, 780, '🍖', '外脆内嫩'],
+    ['德国酸菜', 18, 120, '🥬', '解腻'],
+    ['黑森林蛋糕', 26, 420, '🍰', '樱桃酒'],
+    ['德国碱水面包', 12, 300, '🥨', '咸香'],
+    ['咖喱香肠', 25, 480, '🌭', '咖喱酱'],
+  ],
+  spain: [
+    ['西班牙海鲜饭', 68, 750, '🥘', '藏红花米饭'],
+    ['西班牙火腿', 58, 480, '🍖', '橡果猪'],
+    ['塔帕斯拼盘', 35, 420, '🍢', '小食'],
+    ['西班牙油条', 14, 300, '🍩', '巧克力蘸'],
+    ['番茄冷汤', 16, 180, '🍅', '安达卢西亚'],
+    ['桑格利亚', 20, 200, '🍷', '水果酒'],
+  ],
+  portugal: [
+    ['葡式蛋挞', 12, 320, '🥧', '焦糖酥皮'],
+    ['葡式鳕鱼球', 28, 380, '🐟', '盐鳕鱼'],
+    ['葡式烤沙丁鱼', 35, 420, '🐟', '炭烤'],
+    ['葡式炖菜', 38, 480, '🍲', '豆子炖肉'],
+    ['葡萄牙绿汤', 16, 220, '🥣', '卷心菜'],
+  ],
+  netherlands: [
+    ['荷兰松饼', 15, 340, '🥞', '焦糖'],
+    ['荷兰奶酪拼盘', 32, 420, '🧀', '高达'],
+    ['荷兰炸肉丸', 20, 380, '🧆', '芥末'],
+    ['荷兰腌鲱鱼', 25, 320, '🐟', '洋葱'],
+    ['荷兰糖浆华夫', 14, 360, '🧇', '枫糖'],
+  ],
+  greece: [
+    ['希腊沙拉', 24, 280, '🥗', '羊奶酪'],
+    ['希腊烤肉卷', 28, 440, '🌯', '皮塔'],
+    ['穆萨卡', 42, 520, '🍆', '茄子千层'],
+    ['希腊酸奶蜂蜜', 15, 260, '🍯', '浓郁'],
+    ['希腊果仁蜜饼', 16, 380, '🍮', '蜂蜜核桃'],
+  ],
+  switzerland: [
+    ['瑞士奶酪火锅', 68, 620, '🫕', '融化芝士'],
+    ['瑞士土豆饼', 28, 480, '🥔', '香脆'],
+    ['瑞士巧克力', 35, 420, '🍫', '顶级'],
+    ['苏黎世小牛肉', 55, 560, '🥩', '奶油蘑菇'],
+    ['瑞士卷', 20, 340, '🍰', '奶油卷'],
+  ],
+  russia: [
+    ['罗宋汤', 25, 320, '🍲', '甜菜根'],
+    ['俄式饺子', 30, 460, '🥟', '酸奶油'],
+    ['俄式薄饼', 18, 300, '🥞', '鱼子酱'],
+    ['俄式烤肉串', 38, 520, '🍢', '炭火'],
+    ['俄式蜂蜜蛋糕', 22, 420, '🍰', '层层蜂蜜'],
+  ],
+  usa: [
+    ['双层牛肉汉堡', 35, 780, '🍔', '芝士爆汁'],
+    ['美式热狗', 12, 350, '🌭', '芥末酱'],
+    ['南方炸鸡', 32, 650, '🍗', '香脆多汁'],
+    ['纽约芝士蛋糕', 28, 420, '🧀', '丝滑'],
+    ['美式烤肉', 48, 720, '🍖', '烟熏'],
+    ['苹果派', 18, 380, '🥧', '肉桂'],
+  ],
+  canada: [
+    ['枫糖浆煎饼', 25, 420, '🥞', '枫糖'],
+    ['肉汁薯条', 22, 450, '🍟', '肉汁奶酪'],
+    ['蒙特利尔熏肉三明治', 35, 520, '🥪', '烟熏牛胸'],
+    ['加拿大龙虾卷', 58, 560, '🦞', '奶油'],
+    ['纳奈莫条', 16, 360, '🍫', '三层甜点'],
+  ],
+  mexico: [
+    ['墨西哥卷饼', 28, 520, '🌯', '烤肉芝士'],
+    ['塔可', 20, 420, '🌮', '玉米饼'],
+    ['墨西哥辣椒炖肉', 35, 560, '🌶️', '香料'],
+    ['墨西哥玉米片', 18, 400, '🧀', '芝士莎莎'],
+    ['墨西哥米饭', 15, 300, '🍚', '番茄味'],
+    ['墨西哥酸橙派', 16, 340, '🥧', '酸橙'],
+  ],
+  brazil: [
+    ['巴西烤肉', 58, 720, '🥩', '炭火大块'],
+    ['黑豆炖肉', 35, 500, '🍲', '国民美食'],
+    ['芝士面包球', 18, 280, '🧀', '外脆内软'],
+    ['巴西莓碗', 30, 240, '🫐', '低卡'],
+    ['巴西鸡肉派', 22, 380, '🥧', '芝士'],
+    ['巴西椰子布丁', 14, 320, '🍮', '椰香'],
+  ],
+  argentina: [
+    ['阿根廷牛排', 68, 850, '🥩', '炭火烤'],
+    ['阿根廷肉馅饼', 16, 380, '🥟', '牛肉馅'],
+    ['阿根廷香肠', 20, 400, '🌭', '辣味'],
+    ['阿根廷炖牛腩', 42, 560, '🍲', '红酒'],
+    ['阿根廷烤肉拼盘', 88, 780, '🍖', '聚会'],
+    ['阿根廷焦糖奶酱饼', 15, 350, '🍰', '焦糖酱'],
+  ],
+  peru: [
+    ['秘鲁酸橘汁腌鱼', 38, 320, '🐟', '柠檬腌'],
+    ['秘鲁炒牛肉', 32, 480, '🥩', '铁板'],
+    ['秘鲁土豆泥', 18, 300, '🥔', '芝士'],
+    ['秘鲁鸡肉饭', 28, 460, '🍛', '黄米饭'],
+    ['秘鲁紫玉米汁', 12, 200, '🍹', '紫玉米'],
+  ],
+  cuba: [
+    ['古巴三明治', 20, 400, '🥪', '烤猪肉'],
+    ['古巴黑豆饭', 22, 380, '🍛', '豆饭'],
+    ['古巴炸香蕉', 12, 280, '🍌', '甜咸'],
+    ['古巴炖牛肉', 35, 500, '🍲', '番茄'],
+    ['古巴莫吉托', 15, 180, '🍹', '薄荷朗姆'],
+  ],
+  australia: [
+    ['澳洲牛排', 65, 800, '🥩', '和牛'],
+    ['澳式肉派', 18, 420, '🥧', '肉汁'],
+    ['澳洲龙虾', 88, 650, '🦞', '大龙虾'],
+    ['澳式早午餐', 35, 520, '🍳', '全套'],
+    ['拉明顿蛋糕', 15, 350, '🍰', '椰丝巧克力'],
+    ['澳式肉酱意面', 25, 450, '🍝', '肉酱'],
+  ],
+  newzealand: [
+    ['新西兰羊排', 55, 680, '🍖', '草饲'],
+    ['新西兰青口', 42, 380, '🦪', '白葡萄酒'],
+    ['帕芙洛娃', 20, 340, '🍰', '蛋白霜'],
+    ['新西兰奶酪派', 18, 400, '🥧', '芝士'],
+    ['新西兰蜂蜜', 15, 250, '🍯', '麦卢卡'],
+  ],
+  egypt: [
+    ['埃及烤肉卷', 25, 440, '🌯', '羊肉'],
+    ['埃及炖豆', 15, 300, '🍲', '蚕豆'],
+    ['埃及烤鸽', 38, 420, '🕊️', '米馅'],
+    ['埃及米饭', 12, 260, '🍚', '黄油'],
+    ['埃及库纳法', 16, 360, '🍮', '芝士甜'],
+    ['埃及红茶', 8, 100, '🍵', '薄荷'],
+  ],
+  southafrica: [
+    ['南非烤肉', 45, 600, '🍖', '篝火'],
+    ['南非肉干', 20, 300, '🥩', '风干'],
+    ['南非海鲜咖喱', 38, 480, '🍛', '印度洋'],
+    ['南非玉米粥', 12, 280, '🍚', '白玉米'],
+    ['南非铁锅炖', 42, 520, '🍲', '波提基'],
+    ['南非干果蛋糕', 15, 320, '🍰', '果干'],
+  ],
+  morocco: [
+    ['摩洛哥塔吉锅', 42, 520, '🍲', '陶锅炖'],
+    ['摩洛哥库斯库斯', 32, 480, '🍛', '蒸粗麦粉'],
+    ['摩洛哥薄荷茶', 12, 150, '🍵', '甜薄荷'],
+    ['摩洛哥羊肉串', 28, 440, '🍢', '香料'],
+    ['摩洛哥甜饼', 14, 320, '🍪', '杏仁蜂蜜'],
+  ],
+  nigeria: [
+    ['尼日利亚炖肉', 30, 460, '🍲', '棕榈油'],
+    ['尼日利亚饭团', 16, 340, '🍚', '木薯'],
+    ['尼日利亚烤鱼', 28, 420, '🐟', '炭火'],
+    ['尼日利亚豆饼', 12, 280, '🧆', '炸豆'],
+    ['尼日利亚姜汁饮料', 10, 150, '🍹', '生姜'],
+  ],
+};
+
+/* 由 COUNTRY_FOODS 生成 DISHES（id 1~200）并为每个国家填入 dishes 数组 */
+const DISHES = [];
+COUNTRY_LIST.forEach(c => {
+  c.dishes = [];
+  (COUNTRY_FOODS[c.key] || []).forEach(f => {
+    DISHES.push({ id: DISHES.length + 1, country: c.key, name: f[0], price: f[1], currency: '¥', cal: f[2], emoji: f[3], desc: f[4] });
+    c.dishes.push(DISHES.length);
+  });
+});
+const dishById = id => DISHES.find(d => d.id === id);
+
+/** 失败事件：normal=继续配送（3个），fatal=鸽子回不来→配送失败（7个） */
+const EVENTS = {
+  normal: [
+    { n:'①', name:'鸽子飞累了，在树上歇了半小时' },
+    { n:'③', name:'鸽子穿越到了异世界' },
+    { n:'⑧', name:'鸽子被外卖香晕了' },
+  ],
+  fatal: [
+    { n:'②', name:'鸽子被妈妈叫回家了' },
+    { n:'④', name:'鸽子被弹弓打下来了' },
+    { n:'⑤', name:'鸽子迷路了' },
+    { n:'⑥', name:'鸽子被老鹰叼走了' },
+    { n:'⑦', name:'鸽子把外卖吃了' },
+    { n:'⑨', name:'鸽子半路遇到对象谈恋爱去了' },
+    { n:'⑩', name:'鸽子飞反了，往反方向跑了' },
+  ],
+};
+
+/** 飞行进度提示文案（AI 自由发挥补充） */
+const FLIGHT_TEXTS = [
+  '鸽子正在飞越太平洋……',
+  '鸽子遇到了一朵云，绕了过去……',
+  '鸽子飞累了，但还在坚持……',
+  '鸽子看了一眼地图，确认方向中……',
+  '鸽子距离目的地还有一半路程……',
+  '鸽子正在加速（并没有）……',
+  '鸽子开始怀疑鸽生……',
+  '鸽子在心里默念：稳住，我们能赢……',
+  '鸽子认真核对了一遍外卖单……',
+  '鸽子的翅膀有点酸，但很快乐……',
+];
+
+/* ==================== 基础工具 ==================== */
+const DEG2RAD = Math.PI / 180;
+const rand   = (a, b) => a + Math.random() * (b - a);   // 随机小数
+const randInt = (a, b) => Math.floor(rand(a, b + 1));   // 随机整数
+const pick   = arr => arr[Math.floor(Math.random() * arr.length)];   // 随机取一项
+
+/** 材质快捷创建 */
+function mat(color, opts = {}) {
+  return new THREE.MeshLambertMaterial({ color, ...opts });
+}
+
+/** 经纬度 -> 球面单位向量 */
+function unitFromLatLon(lat, lon) {
+  const phi = (90 - lat) * DEG2RAD;
+  const theta = (lon + 180) * DEG2RAD;
+  return new THREE.Vector3(
+    -Math.sin(phi) * Math.cos(theta),
+     Math.cos(phi),
+     Math.sin(phi) * Math.sin(theta)
+  );
+}
+
+/* ==================== 场景搭建 ==================== */
+
+const R = 1.2;                       // 地球半径
+const scene   = new THREE.Scene();
+const camera  = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+// 初始视角朝向亚洲方向（能看到中国、日韩、东南亚等国家）
+const camHomeUnit = unitFromLatLon(25, 95);
+camera.position.copy(camHomeUnit.clone().multiplyScalar(4.4));
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.getElementById('stage').appendChild(renderer.domElement);
+
+/* 光照 */
+scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+sun.position.set(3, 2, 4);
+scene.add(sun);
+
+/* 星空背景 */
+(function makeStars() {
+  const n = 600;
+  const pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const v = new THREE.Vector3().randomDirection().multiplyScalar(rand(8, 30));
+    pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
+    color: 0xffffff, size: 0.035, transparent: true, opacity: 0.8,
+  })));
+})();
+
+/* 地球：Canvas 手绘卡通风格纹理（暖色治愈风） */
+function makeEarthTexture() {
+  const c = document.createElement('canvas');
+  c.width = 1024; c.height = 512;
+  const g = c.getContext('2d');
+  // 海洋渐变
+  const grad = g.createLinearGradient(0, 0, 0, 512);
+  grad.addColorStop(0, '#93D4F5');
+  grad.addColorStop(0.5, '#6FBFEF');
+  grad.addColorStop(1, '#4FA3DD');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 1024, 512);
+  // 随机大陆色块（暖绿色）
+  let s = 20260824;                       // 固定种子，保证每次生成一致
+  const rnd = () => ((s = (s * 1103515245 + 12345) % 2147483648) / 2147483648);
+  g.fillStyle = '#7EC850';
+  for (let i = 0; i < 30; i++) {
+    const cx = rnd() * 1024, cy = rnd() * 512;
+    const rw = 55 + rnd() * 130, rh = 35 + rnd() * 85;
+    g.beginPath();
+    for (let k = 0; k <= 14; k++) {
+      const a = k / 14 * Math.PI * 2;
+      const rr = 0.72 + rnd() * 0.55;
+      const x = cx + Math.cos(a) * rw * rr;
+      const y = cy + Math.sin(a) * rh * rr;
+      k ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.closePath();
+    g.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+  else tex.encoding = THREE.sRGBEncoding;
+  return tex;
+}
+
+/* 真实地球纹理源（NASA 蓝大理石，多源备选；失败时保持卡通纹理兜底） */
+const REAL_EARTH_TEXTURES = [
+  'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
+  'https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg',
+  'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
+];
+
+/* 视口旋转结构：pivot(俯仰) > globeGroup(自转 + 全部内容) */
+const pivot = new THREE.Group();
+const globeGroup = new THREE.Group();
+pivot.add(globeGroup);
+scene.add(pivot);
+
+const globe = new THREE.Mesh(
+  new THREE.SphereGeometry(R, 64, 48),
+  new THREE.MeshLambertMaterial({ map: makeEarthTexture() })
+);
+globeGroup.add(globe);
+
+/* 异步加载真实地球纹理，成功后替换（按序尝试多个源） */
+(function loadRealEarth() {
+  let idx = 0;
+  const tryNext = () => {
+    if (idx >= REAL_EARTH_TEXTURES.length) return;
+    const url = REAL_EARTH_TEXTURES[idx++];
+    new THREE.TextureLoader().load(url, tex => {
+      if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+      else tex.encoding = THREE.sRGBEncoding;
+      globe.material.map = tex;
+      globe.material.needsUpdate = true;
+    }, undefined, tryNext);
+  };
+  tryNext();
+})();
+
+/* 大气光晕 */
+const glow = new THREE.Mesh(
+  new THREE.SphereGeometry(R * 1.035, 48, 32),
+  new THREE.MeshBasicMaterial({ color: 0xBFE6FF, transparent: true, opacity: 0.25, side: THREE.BackSide })
+);
+globeGroup.add(glow);
+
+/* ==================== 国家标记：旗杆 + 随风飘扬的国旗 ==================== */
+const markers = [];
+const flagWaves = [];            // 所有旗帜几何体（用于飘动动画）
+
+/** 国旗图片多源加载（jsdelivr 优先，flagcdn 备选；失败则保持本地绘制的国旗） */
+function loadFlagImage(country, cb) {
+  const sources = [
+    'https://cdn.jsdelivr.net/gh/hampusborgos/country-flags@main/png250px/' + country.cc + '.png',
+    'https://flagcdn.com/w160/' + country.cc + '.png',
+  ];
+  let i = 0;
+  const tryNext = () => {
+    if (i >= sources.length) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => cb(img);
+    img.onerror = () => { i++; tryNext(); };
+    img.src = sources[i++];
+  };
+  tryNext();
+}
+
+/** 本地绘制 35 国简化国旗（离线 100% 可显示，图案接近真实） */
+function drawNationalFlag(g, cc, w, h) {
+  const R = (x, y, w2, h2, c) => { g.fillStyle = c; g.fillRect(x, y, w2, h2); };
+  const star = (cx, cy, r, c) => {
+    g.fillStyle = c;
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const rr = i % 2 === 0 ? r : r * 0.4;
+      const a = -Math.PI / 2 + i * Math.PI / 5;
+      const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.closePath();
+    g.fill();
+  };
+  const circle = (cx, cy, r, c) => { g.fillStyle = c; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill(); };
+  switch (cc) {
+    /* 中国：红底五星 */
+    case 'cn':
+      R(0, 0, w, h, '#DE2910');
+      star(w * 0.22, h * 0.30, h * 0.14, '#FFDE00');
+      [[0.38, 0.16], [0.43, 0.31], [0.38, 0.46], [0.31, 0.50]].forEach(p => star(w * p[0], h * p[1], h * 0.045, '#FFDE00'));
+      break;
+    /* 日本：白底红日 */
+    case 'jp': R(0, 0, w, h, '#fff'); circle(w * 0.5, h * 0.5, h * 0.28, '#BC002D'); break;
+    /* 韩国：白底太极四卦（简化） */
+    case 'kr':
+      R(0, 0, w, h, '#fff');
+      g.fillStyle = '#CD2E3A'; g.beginPath(); g.arc(w * 0.5, h * 0.5, h * 0.30, -Math.PI, 0); g.fill();
+      g.fillStyle = '#0047A0'; g.beginPath(); g.arc(w * 0.5, h * 0.5, h * 0.30, 0, Math.PI); g.fill();
+      circle(w * 0.5, h * 0.5 - h * 0.15, h * 0.15, '#0047A0');
+      circle(w * 0.5, h * 0.5 + h * 0.15, h * 0.15, '#CD2E3A');
+      R(0, 0, h * 0.16, h * 0.16, '#000'); R(w - h * 0.16, 0, h * 0.16, h * 0.16, '#000');
+      R(0, h - h * 0.16, h * 0.16, h * 0.16, '#000'); R(w - h * 0.16, h - h * 0.16, h * 0.16, h * 0.16, '#000');
+      break;
+    /* 泰国：红白蓝白红 */
+    case 'th':
+      R(0, 0, w, h / 5, '#A51931'); R(0, h / 5, w, h / 5, '#F4F5F8');
+      R(0, 2 * h / 5, w, h / 5, '#2D2A4A');
+      R(0, 3 * h / 5, w, h / 5, '#F4F5F8'); R(0, 4 * h / 5, w, h / 5, '#A51931');
+      break;
+    /* 越南：红底金星 */
+    case 'vn': R(0, 0, w, h, '#DA251D'); star(w * 0.5, h * 0.5, h * 0.30, '#FFFF00'); break;
+    /* 印度：橙白绿 + 蓝轮 */
+    case 'in':
+      R(0, 0, w, h / 3, '#FF9933'); R(0, h / 3, w, h / 3, '#fff'); R(0, 2 * h / 3, w, h / 3, '#138808');
+      circle(w * 0.5, h * 0.5, h * 0.14, '#000080');
+      break;
+    /* 新加坡：上红下白 + 星月 */
+    case 'sg':
+      R(0, 0, w, h / 2, '#EF3340'); R(0, h / 2, w, h / 2, '#fff');
+      circle(w * 0.18, h * 0.26, h * 0.12, '#fff');
+      star(w * 0.30, h * 0.14, h * 0.05, '#fff'); star(w * 0.32, h * 0.30, h * 0.05, '#fff');
+      star(w * 0.38, h * 0.10, h * 0.05, '#fff');
+      break;
+    /* 马来西亚：红白条 + 蓝块星月 */
+    case 'my':
+      for (let i = 0; i < 14; i++) R(0, i * h / 14, w, h / 28, i % 2 ? '#fff' : '#CC0001');
+      R(0, 0, w * 0.4, h * 0.5, '#010066');
+      circle(w * 0.20, h * 0.25, h * 0.13, '#fff');
+      star(w * 0.28, h * 0.20, h * 0.05, '#FFCC00');
+      break;
+    /* 印尼：红白横 */
+    case 'id': R(0, 0, w, h / 2, '#CE1126'); R(0, h / 2, w, h / 2, '#fff'); break;
+    /* 菲律宾：蓝红 + 白三角 + 黄星 */
+    case 'ph':
+      R(0, 0, w, h / 2, '#0038A8'); R(0, h / 2, w, h / 2, '#CE1126');
+      g.fillStyle = '#fff';
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(0, h); g.lineTo(w * 0.42, h / 2); g.closePath(); g.fill();
+      star(w * 0.14, h * 0.5, h * 0.09, '#FCD116');
+      break;
+    /* 土耳其：红底白月星 */
+    case 'tr':
+      R(0, 0, w, h, '#E30A17');
+      circle(w * 0.42, h * 0.5, h * 0.30, '#fff');
+      circle(w * 0.44, h * 0.5, h * 0.26, '#E30A17');
+      star(w * 0.60, h * 0.5, h * 0.13, '#fff');
+      break;
+    /* 阿联酋：红竖 + 绿白黑横 */
+    case 'ae':
+      R(0, 0, w * 0.25, h, '#EF3340');
+      R(w * 0.25, 0, w * 0.75, h / 3, '#009739');
+      R(w * 0.25, h / 3, w * 0.75, h / 3, '#fff');
+      R(w * 0.25, 2 * h / 3, w * 0.75, h / 3, '#000');
+      break;
+    /* 法国：竖蓝白红 */
+    case 'fr': R(0, 0, w / 3, h, '#0055A4'); R(w / 3, 0, w / 3, h, '#fff'); R(2 * w / 3, 0, w / 3, h, '#EF4135'); break;
+    /* 英国：蓝底米字 */
+    case 'uk':
+      R(0, 0, w, h, '#012169');
+      g.strokeStyle = '#fff'; g.lineWidth = h * 0.06;
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(w, h); g.moveTo(w, 0); g.lineTo(0, h); g.stroke();
+      g.strokeStyle = '#C8102E'; g.lineWidth = h * 0.036;
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(w, h); g.moveTo(w, 0); g.lineTo(0, h); g.stroke();
+      g.fillStyle = '#fff'; g.fillRect(0, h * 0.32, w, h * 0.36); g.fillRect(w * 0.28, 0, w * 0.44, h);
+      g.fillStyle = '#C8102E'; g.fillRect(0, h * 0.41, w, h * 0.18); g.fillRect(w * 0.36, 0, w * 0.28, h);
+      break;
+    /* 意大利：竖绿白红 */
+    case 'it': R(0, 0, w / 3, h, '#009246'); R(w / 3, 0, w / 3, h, '#fff'); R(2 * w / 3, 0, w / 3, h, '#CE2B37'); break;
+    /* 德国：横黑红金 */
+    case 'de': R(0, 0, w, h / 3, '#000'); R(0, h / 3, w, h / 3, '#DD0000'); R(0, 2 * h / 3, w, h / 3, '#FFCE00'); break;
+    /* 西班牙：红黄红 */
+    case 'es': R(0, 0, w, h, '#AA151B'); R(0, h / 4, w, h / 2, '#F1BF00'); break;
+    /* 葡萄牙：绿红 + 黄圆 */
+    case 'pt': R(0, 0, w * 0.4, h, '#046A38'); R(w * 0.4, 0, w * 0.6, h, '#DA291C'); circle(w * 0.42, h * 0.5, h * 0.28, '#FFE900'); break;
+    /* 荷兰：横红白蓝 */
+    case 'nl': R(0, 0, w, h / 3, '#AE1C28'); R(0, h / 3, w, h / 3, '#fff'); R(0, 2 * h / 3, w, h / 3, '#21468B'); break;
+    /* 希腊：蓝白条 + 白十字 */
+    case 'gr':
+      for (let i = 0; i < 9; i++) R(0, i * h / 9, w, h / 18, i % 2 ? '#fff' : '#0D5EAF');
+      R(0, 0, w * 0.42, h * 0.5, '#0D5EAF');
+      R(0, h * 0.11, w * 0.12, h * 0.28, '#fff');
+      R(w * 0.06, 0, w * 0.14, h * 0.5, '#fff');
+      break;
+    /* 瑞士：红底白十字 */
+    case 'ch':
+      R(0, 0, w, h, '#DA291C');
+      R(w * 0.35, h * 0.2, w * 0.3, h * 0.6, '#fff');
+      R(w * 0.2, h * 0.35, w * 0.6, h * 0.3, '#fff');
+      break;
+    /* 俄罗斯：横白蓝红 */
+    case 'ru': R(0, 0, w, h / 3, '#fff'); R(0, h / 3, w, h / 3, '#0039A6'); R(0, 2 * h / 3, w, h / 3, '#D52B1E'); break;
+    /* 美国：星条旗 */
+    case 'us':
+      for (let i = 0; i < 13; i++) R(0, i * h / 13, w, h / 26, i % 2 ? '#fff' : '#B22234');
+      R(0, 0, w * 0.42, h * 0.54, '#3C3B6E');
+      for (let r = 0; r < 5; r++) for (let c2 = 0; c2 < 6; c2++) star(w * 0.04 + c2 * w * 0.066, h * 0.06 + r * h * 0.094, h * 0.017, '#fff');
+      for (let r = 0; r < 4; r++) for (let c2 = 0; c2 < 5; c2++) star(w * 0.075 + c2 * w * 0.066, h * 0.115 + r * h * 0.094, h * 0.017, '#fff');
+      break;
+    /* 加拿大：红白红 + 枫叶 */
+    case 'ca':
+      R(0, 0, w, h, '#D80621'); R(w * 0.25, 0, w * 0.5, h, '#fff');
+      g.fillStyle = '#D80621';
+      g.beginPath();
+      g.moveTo(w * 0.5, h * 0.16); g.lineTo(w * 0.56, h * 0.40); g.lineTo(w * 0.68, h * 0.36);
+      g.lineTo(w * 0.60, h * 0.52); g.lineTo(w * 0.72, h * 0.56); g.lineTo(w * 0.58, h * 0.62);
+      g.lineTo(w * 0.62, h * 0.76); g.lineTo(w * 0.5, h * 0.62); g.lineTo(w * 0.38, h * 0.76);
+      g.lineTo(w * 0.42, h * 0.62); g.lineTo(w * 0.28, h * 0.56); g.lineTo(w * 0.40, h * 0.52);
+      g.lineTo(w * 0.32, h * 0.36); g.lineTo(w * 0.44, h * 0.40); g.closePath(); g.fill();
+      break;
+    /* 墨西哥：绿白红 + 徽章简化 */
+    case 'mx':
+      R(0, 0, w / 3, h, '#006847'); R(w / 3, 0, w / 3, h, '#fff'); R(2 * w / 3, 0, w / 3, h, '#CE1126');
+      R(w / 3 + w * 0.08, h * 0.3, w * 0.17, h * 0.4, '#7B4B1E');
+      break;
+    /* 巴西：绿底黄菱形蓝圆 */
+    case 'br':
+      R(0, 0, w, h, '#009C3B');
+      g.fillStyle = '#FFDF00';
+      g.beginPath();
+      g.moveTo(w * 0.5, h * 0.08); g.lineTo(w * 0.92, h * 0.5); g.lineTo(w * 0.5, h * 0.92); g.lineTo(w * 0.08, h * 0.5);
+      g.closePath(); g.fill();
+      circle(w * 0.5, h * 0.5, h * 0.22, '#002776');
+      break;
+    /* 阿根廷：浅蓝白浅蓝 + 太阳 */
+    case 'ar':
+      R(0, 0, w, h / 3, '#74ACDF'); R(0, h / 3, w, h / 3, '#fff'); R(0, 2 * h / 3, w, h / 3, '#74ACDF');
+      circle(w * 0.5, h * 0.5, h * 0.16, '#F6B40E');
+      break;
+    /* 秘鲁：红白红竖 */
+    case 'pe': R(0, 0, w / 3, h, '#D91023'); R(w / 3, 0, w / 3, h, '#fff'); R(2 * w / 3, 0, w / 3, h, '#D91023'); break;
+    /* 古巴：蓝白条 + 红三角白星 */
+    case 'cu':
+      for (let i = 0; i < 5; i++) R(0, i * h / 5, w, h / 10, i % 2 ? '#fff' : '#002A8F');
+      g.fillStyle = '#CF142B';
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(0, h); g.lineTo(w * 0.45, h / 2); g.closePath(); g.fill();
+      star(w * 0.13, h * 0.5, h * 0.09, '#fff');
+      break;
+    /* 澳大利亚：蓝底米字 + 星 */
+    case 'au':
+      R(0, 0, w, h, '#012169');
+      g.strokeStyle = '#fff'; g.lineWidth = h * 0.05;
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(w, h); g.moveTo(w, 0); g.lineTo(0, h); g.stroke();
+      g.strokeStyle = '#C8102E'; g.lineWidth = h * 0.03;
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(w, h); g.moveTo(w, 0); g.lineTo(0, h); g.stroke();
+      g.fillStyle = '#fff'; g.fillRect(0, h * 0.35, w * 0.5, h * 0.3); g.fillRect(w * 0.2, 0, w * 0.3, h * 0.65);
+      star(w * 0.28, h * 0.2, h * 0.06, '#fff');
+      star(w * 0.72, h * 0.30, h * 0.09, '#fff'); star(w * 0.85, h * 0.5, h * 0.09, '#fff');
+      star(w * 0.72, h * 0.68, h * 0.09, '#fff'); star(w * 0.58, h * 0.8, h * 0.09, '#fff');
+      break;
+    /* 新西兰：蓝底米字 + 红星 */
+    case 'nz':
+      R(0, 0, w, h, '#00247D');
+      g.strokeStyle = '#fff'; g.lineWidth = h * 0.05;
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(w, h); g.moveTo(w, 0); g.lineTo(0, h); g.stroke();
+      g.strokeStyle = '#CC142B'; g.lineWidth = h * 0.03;
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(w, h); g.moveTo(w, 0); g.lineTo(0, h); g.stroke();
+      g.fillStyle = '#fff'; g.fillRect(0, h * 0.35, w * 0.5, h * 0.3); g.fillRect(w * 0.2, 0, w * 0.3, h * 0.65);
+      star(w * 0.75, h * 0.30, h * 0.08, '#CC142B'); star(w * 0.85, h * 0.55, h * 0.08, '#CC142B');
+      star(w * 0.70, h * 0.72, h * 0.08, '#CC142B'); star(w * 0.62, h * 0.50, h * 0.08, '#CC142B');
+      break;
+    /* 埃及：红白黑 + 金徽章简化 */
+    case 'eg':
+      R(0, 0, w, h / 3, '#CE1126'); R(0, h / 3, w, h / 3, '#fff'); R(0, 2 * h / 3, w, h / 3, '#000');
+      circle(w * 0.5, h * 0.5, h * 0.12, '#C09300');
+      break;
+    /* 南非：多色（简化） */
+    case 'za':
+      R(0, 0, w, h / 2, '#E03C31'); R(0, h / 2, w, h / 2, '#001489');
+      g.fillStyle = '#FFB612';
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(0, h); g.lineTo(w * 0.24, h / 2); g.closePath(); g.fill();
+      g.fillStyle = '#007A4D';
+      g.beginPath(); g.moveTo(w * 0.24, 0); g.lineTo(w * 0.36, h / 2); g.lineTo(w * 0.24, h); g.lineTo(w * 0.32, h); g.lineTo(w * 0.48, h / 2); g.lineTo(w * 0.32, 0); g.closePath(); g.fill();
+      g.fillStyle = '#fff';
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(0, h); g.lineTo(w * 0.14, h / 2); g.closePath(); g.fill();
+      g.fillStyle = '#000';
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(0, h); g.lineTo(w * 0.08, h / 2); g.closePath(); g.fill();
+      break;
+    /* 摩洛哥：红底绿星 */
+    case 'ma': R(0, 0, w, h, '#C1272D'); star(w * 0.5, h * 0.5, h * 0.26, '#006233'); break;
+    /* 尼日利亚：竖绿白绿 */
+    case 'ng': R(0, 0, w / 3, h, '#008751'); R(w / 3, 0, w / 3, h, '#fff'); R(2 * w / 3, 0, w / 3, h, '#008751'); break;
+    default:
+      R(0, 0, w, h, '#C9D6E4');
+  }
+}
+
+/** 本地绘制国旗并转成 dataURL（离线 100% 可用，供点单页/配送面板 img 使用） */
+function makeLocalFlagDataURL(cc) {
+  const c = document.createElement('canvas');
+  c.width = 120; c.height = 80;
+  const g = c.getContext('2d');
+  drawNationalFlag(g, cc, 120, 80);
+  return c.toDataURL('image/png');
+}
+
+/** 旗帜纹理（先本地绘制国旗，真实国旗图加载成功后覆盖） */
+function makeFlagTexture(country) {
+  const c = document.createElement('canvas');
+  c.width = 220; c.height = 147;
+  const g = c.getContext('2d');
+  drawNationalFlag(g, country.cc, 220, 147);
+  const tex = new THREE.CanvasTexture(c);
+  loadFlagImage(country, img => {
+    g.clearRect(0, 0, 220, 147);
+    g.drawImage(img, 0, 0, 220, 147);            // 拉伸为 3:2 旗面
+    tex.needsUpdate = true;
+  });
+  return tex;
+}
+
+/** 制作旗杆+国旗（旗帜顶点波浪动画在 animate 中驱动） */
+function makeFlagPole(country) {
+  const g = new THREE.Group();
+  // 底座（国家色，兼作点击热区）
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.04, 0.022, 10), mat(country.color));
+  base.position.y = 0.011;
+  // 旗杆
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.008, 0.27, 8), mat(0x8A8A96));
+  pole.position.y = 0.15;
+  // 顶部金色圆球
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.013, 10, 8), mat(0xFFC800));
+  ball.position.y = 0.29;
+  // 旗帜（细分平面，便于顶点飘动）
+  const flagGeo = new THREE.PlaneGeometry(0.22, 0.147, 14, 5);
+  const tex = makeFlagTexture(country);
+  const flagMesh = new THREE.Mesh(flagGeo, new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide }));
+  flagMesh.position.set(0.11, 0.235, 0);          // 左边缘固定在旗杆上
+  g.add(base, pole, ball, flagMesh);
+  // 飘动参数（每面旗帜随机相位/频率，更自然）
+  flagWaves.push({ geo: flagGeo, seed: Math.random() * 100, freq: 15 + Math.random() * 6, speed: 5 + Math.random() * 3 });
+  return g;
+}
+
+COUNTRY_LIST.forEach(c => {
+  const u = unitFromLatLon(c.lat, c.lon);
+  const flagPole = makeFlagPole(c);
+  flagPole.position.copy(u.clone().multiplyScalar(R + 0.045));
+  flagPole.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), u);
+  flagPole.userData.country = c;
+  globeGroup.add(flagPole);
+  markers.push(flagPole);
+});
+
+/* 鸽子出发点标记（地球一侧固定点：大西洋上空） */
+const START_UNIT = unitFromLatLon(22, -60);
+(function makeStartPad() {
+  const g = new THREE.Group();
+  const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.05, 12), mat(0xFFC800));
+  pad.position.y = 0.025;
+  const flag = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.1, 8), mat(0x58CC02));
+  flag.position.y = 0.1;
+  g.add(pad, flag);
+  g.position.copy(START_UNIT.clone().multiplyScalar(R + 0.04));
+  g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), START_UNIT);
+  globeGroup.add(g);
+})();
+
+/* ==================== 鸽子 3D 模型（圆润卡通版：椭圆身体+大萌眼+双层翅膀） ==================== */
+let pigeon = null;
+function makePigeon(opts = {}) {
+  const g = new THREE.Group();
+  const bodyC  = opts.color !== undefined ? opts.color : 0xFFFFFF;   // 身体
+  const bellyC = opts.belly !== undefined ? opts.belly : 0xFFF3D6;   // 肚皮（奶油色）
+  const wingC  = opts.wing  !== undefined ? opts.wing  : 0xC9D6E4;   // 翅膀主色（灰蓝）
+  const wingC2 = opts.wing2 !== undefined ? opts.wing2 : 0xA9BBCE;   // 翅膀辅色
+  const beakC  = 0xFF8C2B;                                           // 喙 / 脚（橙色）
+  const feetC  = 0xFF8C2B;
+
+  // —— 身体：椭圆球，长轴沿 Z（前进方向）——
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.05, 20, 14), mat(bodyC));
+  body.scale.set(1, 0.86, 1.3);
+  // 肚皮（奶油色，微微凸出）
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.037, 14, 10), mat(bellyC));
+  belly.position.set(0, -0.026, 0.02);
+  belly.scale.set(1, 0.72, 1.35);
+
+  // —— 头（圆球，含喙，可整体点头做咀嚼动画）——
+  const headGrp = new THREE.Group();
+  headGrp.position.set(0, 0.05, 0.088);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.033, 16, 12), mat(bodyC));
+  head.scale.set(1, 1.04, 1.08);
+  headGrp.add(head);
+  // 上喙 + 下喙
+  const beakUp = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.034, 8), mat(beakC));
+  beakUp.position.set(0, 0.002, 0.037);
+  beakUp.rotation.x = Math.PI / 2;
+  const beakLow = beakUp.clone();
+  beakLow.scale.setScalar(0.8);
+  beakLow.position.set(0, -0.007, 0.034);
+  headGrp.add(beakUp, beakLow);
+
+  // —— 大萌眼（白眼珠 + 黑瞳孔 + 高光点）——
+  const makeEye = () => {
+    const e = new THREE.Group();
+    const white = new THREE.Mesh(new THREE.SphereGeometry(0.015, 10, 8), mat(0xFFFFFF));
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 8), mat(0x23232F));
+    pupil.position.z = 0.009;
+    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.0028, 6, 6), mat(0xFFFFFF));
+    glint.position.set(0.0025, 0.0035, 0.014);
+    e.add(white, pupil, glint);
+    return e;
+  };
+  const eyeL = makeEye(); eyeL.position.set(-0.023, 0.058, 0.096);
+  const eyeR = makeEye(); eyeR.position.set(0.023, 0.058, 0.096);
+
+  // —— 腮红（粉色小圆片）——
+  const blush = new THREE.Mesh(new THREE.SphereGeometry(0.007, 8, 8), mat(0xFFB3C4));
+  blush.scale.set(1, 0.55, 1);
+  const blushL = blush.clone(); blushL.position.set(-0.031, 0.038, 0.082);
+  const blushR = blush.clone(); blushR.position.set(0.031, 0.038, 0.082);
+
+  // —— 翅膀：双层半圆扁片，拍打动画 ——
+  const wingGeo = new THREE.SphereGeometry(0.055, 12, 8, 0, Math.PI, 0, Math.PI / 2);
+  const makeWing = () => {
+    const w = new THREE.Group();
+    const m1 = new THREE.Mesh(wingGeo, mat(wingC));
+    m1.scale.set(1, 0.3, 1);
+    const m2 = new THREE.Mesh(wingGeo, mat(wingC2));
+    m2.scale.set(0.72, 0.28, 0.85);
+    m2.position.set(0.055, 0.006, 0.01);
+    w.add(m1, m2);
+    return w;
+  };
+  const wingL = makeWing();
+  wingL.position.set(-0.024, 0.022, 0);
+  const wingR = makeWing();
+  wingR.position.set(0.024, 0.022, 0);
+
+  // —— 尾巴：三片扇形小尾羽 ——
+  const tailGeo = new THREE.ConeGeometry(0.022, 0.055, 6);
+  const tailC = new THREE.Mesh(tailGeo, mat(wingC));
+  tailC.position.set(0, 0.012, -0.088);
+  tailC.rotation.x = -Math.PI / 2 + 0.45;
+  const tailL = tailC.clone(); tailL.position.x = -0.017; tailL.rotation.z = 0.3;
+  const tailR = tailC.clone(); tailR.position.x = 0.017;  tailR.rotation.z = -0.3;
+
+  // —— 脚：橙色小脚丫 ——
+  const makeFoot = x => {
+    const f = new THREE.Group();
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0055, 0.03, 6), mat(feetC));
+    leg.position.y = -0.015;
+    const clawA = new THREE.Mesh(new THREE.ConeGeometry(0.004, 0.014, 5), mat(feetC));
+    clawA.position.set(-0.006, -0.031, 0.002); clawA.rotation.z = 0.55;
+    const clawB = clawA.clone();
+    clawB.position.set(0.006, -0.031, 0.002); clawB.rotation.z = -0.55;
+    const clawC = clawA.clone();
+    clawC.position.set(0, -0.032, 0.006); clawC.rotation.x = 0.4; clawC.rotation.z = 0;
+    f.add(leg, clawA, clawB, clawC);
+    f.position.set(x, -0.04, 0.012);
+    return f;
+  };
+  const footL = makeFoot(-0.024);
+  const footR = makeFoot(0.024);
+
+  // —— 外卖盒（挂在肚皮下方，飞行时可见）——
+  const pouch = new THREE.Group();
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.042, 0.05), mat(0xE23B3B));
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.013, 0.052), mat(0xFFFFFF));
+  lid.position.y = 0.0275;
+  const strap = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.022, 0.004), mat(0xD9D9D9));
+  strap.position.y = 0.049;
+  pouch.add(box, lid, strap);
+  pouch.position.set(0, -0.062, 0.008);
+
+  g.add(body, belly, headGrp, eyeL, eyeR, blushL, blushR,
+        wingL, wingR, tailC, tailL, tailR, footL, footR, pouch);
+  g.userData = { wingL, wingR, head: headGrp, body, pouch, scale0: opts.scale || 1 };
+  if (opts.scale) g.scale.setScalar(opts.scale);
+  return g;
+}
+pigeon = makePigeon();
+pigeon.visible = false;
+globeGroup.add(pigeon);
+
+/** 3D 树（事件①使用） */
+function makeTree() {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.5, 8), mat(0x8B5A2B));
+  trunk.position.y = 0.25;
+  const fol1 = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 1), mat(0x58CC02));
+  fol1.position.y = 0.62;
+  const fol2 = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 1), mat(0x7EC850));
+  fol2.position.set(0.14, 0.78, 0.05);
+  const fol3 = fol2.clone();
+  fol3.position.set(-0.1, 0.82, -0.06);
+  g.add(trunk, fol1, fol2, fol3);
+  return g;
+}
+
+/** 老鹰（事件⑥使用） */
+function makeEagle() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), mat(0x6B5B4B));
+  body.scale.set(1, 0.62, 1.5);
+  const wingGeo = new THREE.ConeGeometry(0.05, 0.34, 4);
+  const wL = new THREE.Mesh(wingGeo, mat(0x3B3B45));
+  wL.rotation.z = Math.PI / 2 + 0.35;
+  wL.scale.set(1, 0.16, 0.9);
+  wL.position.set(-0.22, 0.01, 0);
+  const wR = wL.clone();
+  wR.rotation.z = -(Math.PI / 2 + 0.35);
+  wR.position.x = 0.22;
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.07, 6), mat(0x6B5B4B));
+  head.position.set(0, 0.03, 0.09);
+  head.rotation.x = -Math.PI / 2;
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.011, 0.03, 6), mat(0xFFB32B));
+  beak.position.set(0, 0.02, 0.13);
+  beak.rotation.x = -Math.PI / 2;
+  g.add(body, wL, wR, head, beak);
+  return g;
+}
+
+/* ==================== 粒子系统（羽毛 / 爱心 Sprite） ==================== */
+const particleList = [];   // 全局粒子池
+const texHeart = makeSpriteTexture(drawHeart);
+const texFeather = makeSpriteTexture(drawFeather);
+
+function drawHeart(g) {
+  const s = g.canvas.width;
+  g.fillStyle = '#FF6FA5';
+  g.beginPath();
+  g.moveTo(s / 2, s * 0.82);
+  g.bezierCurveTo(s * 0.05, s * 0.45, s * 0.18, s * 0.08, s * 0.5, s * 0.32);
+  g.bezierCurveTo(s * 0.82, s * 0.08, s * 0.95, s * 0.45, s / 2, s * 0.82);
+  g.fill();
+}
+function drawFeather(g) {
+  const s = g.canvas.width;
+  g.fillStyle = '#FFFFFF';
+  g.beginPath();
+  g.ellipse(s / 2, s / 2, s * 0.42, s * 0.12, Math.PI / 4, 0, Math.PI * 2);
+  g.fill();
+}
+function makeSpriteTexture(drawFn, size = 64) {
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  drawFn(c.getContext('2d'));
+  return new THREE.CanvasTexture(c);
+}
+
+/**
+ * 粒子爆发
+ * @param {{pos:THREE.Vector3, tex:THREE.Texture, count:number, speed:number,
+ *          life:number, gravity:number, size:number, up:THREE.Vector3}} o
+ */
+function burst(o) {
+  const up = o.up || new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i < o.count; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: o.tex, transparent: true, depthTest: false,
+    }));
+    sp.scale.setScalar(o.size * rand(0.7, 1.3));
+    sp.position.copy(o.pos).add(new THREE.Vector3(rand(-0.06, 0.06), rand(-0.06, 0.06), rand(-0.06, 0.06)));
+    const v = new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1))
+      .normalize().multiplyScalar(o.speed * rand(0.4, 1));
+    // 让粒子大致向上飘散（视觉更好）
+    v.add(up.clone().multiplyScalar(o.speed * 0.5));
+    globeGroup.add(sp);
+    particleList.push({ sp, vel: v, life: rand(o.life * 0.7, o.life), max: o.life, gravity: o.gravity || 0 });
+  }
+}
+function updateParticles(dt) {
+  for (let i = particleList.length - 1; i >= 0; i--) {
+    const p = particleList[i];
+    p.life -= dt;
+    if (p.life <= 0) {
+      globeGroup.remove(p.sp);
+      p.sp.material.dispose();
+      particleList.splice(i, 1);
+      continue;
+    }
+    p.vel.y -= (p.gravity || 0) * dt;
+    p.sp.position.addScaledVector(p.vel, dt);
+    p.sp.material.opacity = Math.max(0, p.life / p.max);
+  }
+}
+
+/* ==================== DOM 特效：闪白 / 漩涡 / 气泡 / 横幅 ==================== */
+const elFlash = document.getElementById('flash');
+const elVortex = document.getElementById('vortex');
+const elBubble = document.getElementById('bubble');
+const elEventBanner = document.getElementById('eventBanner');
+let bubbleTimer = null;
+
+function flashOnce(delay = 0) {
+  setTimeout(() => {
+    elFlash.classList.add('on');
+    setTimeout(() => elFlash.classList.remove('on'), 240);
+  }, delay);
+}
+const vortexOn = () => elVortex.classList.add('on');
+const vortexOff = () => elVortex.classList.remove('on');
+
+/** 在鸽子头顶显示浮动气泡（text: 'Zzz' / 'XX' 等） */
+function showBubble(text) {
+  elBubble.textContent = text;
+  elBubble.classList.remove('hidden');
+  elBubble.userData = {};
+}
+function hideBubble() { elBubble.classList.add('hidden'); }
+/** 每帧把气泡投影到屏幕（跟随鸽子当前位置） */
+function updateBubble() {
+  if (elBubble.classList.contains('hidden') || !elBubble.userData) return;
+  if (!pigeon || !pigeon.visible) return;
+  const wp = new THREE.Vector3();
+  pigeon.getWorldPosition(wp);
+  wp.add(pigeon.userData.offset || new THREE.Vector3());
+  wp.project(camera);
+  elBubble.style.left = (wp.x * 0.5 + 0.5) * innerWidth + 'px';
+  elBubble.style.top = (-wp.y * 0.5 + 0.5) * innerHeight - 30 + 'px';
+}
+
+/** 事件横幅 */
+function showEventBanner(text, dur) {
+  elEventBanner.textContent = text;
+  elEventBanner.classList.remove('hidden');
+  clearTimeout(elEventBanner._t);
+  elEventBanner._t = setTimeout(() => elEventBanner.classList.add('hidden'), dur * 1000);
+}
+
+/* ==================== 输入控制：拖拽旋转 / 滚轮缩放 / 点击标记 ==================== */
+let drag = { active: false, lastX: 0, lastY: 0, moved: 0 };
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+let hoveredMarker = null;
+let busy = false;          // 配送进行中，禁止再次下单
+// 配送中镜头交互：用户拖拽时暂停全局跟随，8 秒无操作自动恢复
+const camInteract = { active: false, idle: 0 };
+
+/** 是否有弹窗/遮罩正在显示（此时禁止拖动地球） */
+function uiBlocked() {
+  return !elFoodModal.classList.contains('hidden')
+      || !elResultModal.classList.contains('hidden')
+      || !elTransition.classList.contains('hidden');
+}
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (uiBlocked()) return;
+  drag.active = true; drag.lastX = e.clientX; drag.lastY = e.clientY; drag.moved = 0;
+  camInteract.active = true;
+  camInteract.idle = 0;
+  renderer.domElement.setPointerCapture(e.pointerId);
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!drag.active && e.pointerType === 'mouse') {
+    updateHover(e);
+    return;
+  }
+  if (drag.active) {
+    const dx = e.clientX - drag.lastX, dy = e.clientY - drag.lastY;
+    drag.moved += Math.abs(dx) + Math.abs(dy);
+    globeGroup.rotation.y += dx * 0.005;
+    pivot.rotation.x = Math.max(-0.7, Math.min(0.7, pivot.rotation.x + dy * 0.004));
+    camInteract.idle = 0;                     // 拖拽中持续重置闲置计时
+    drag.lastX = e.clientX; drag.lastY = e.clientY;
+  }
+});
+function endDrag(e) {
+  if (!drag.active) return;
+  drag.active = false;
+  camInteract.active = false;
+  camInteract.idle = 0;                       // 松手后开始 8 秒倒计时
+  // 区分“点击”与“拖拽”（飞行中不允许再下单）
+  if (drag.moved < 8 && !uiBlocked() && !flightActive) {
+    const m = hitMarker(e.clientX, e.clientY);
+    if (m) openFoodModal(m.userData.country);
+  }
+}
+renderer.domElement.addEventListener('pointerup', endDrag);
+renderer.domElement.addEventListener('pointercancel', () => { drag.active = false; camInteract.active = false; camInteract.idle = 0; });
+
+function updateHover(e) {
+  const m = hitMarker(e.clientX, e.clientY);
+  if (m !== hoveredMarker) {
+    hoveredMarker = m;
+    renderer.domElement.style.cursor = m ? 'pointer' : 'grab';
+  }
+}
+function hitMarker(cx, cy) {
+  // 按画布实际尺寸换算（配送分屏时画布高度变化）
+  const rect = renderer.domElement.getBoundingClientRect();
+  ndc.set(((cx - rect.left) / rect.width) * 2 - 1, -((cy - rect.top) / rect.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(markers, true);
+  if (hits.length) {
+    let o = hits[0].object;
+    while (o && !o.userData.country) o = o.parent;
+    return o;
+  }
+  return null;
+}
+
+/* 滚轮缩放（修改相机目标距离，飞行跟随时自动忽略） */
+let camDist = 4.4;                          // 相机到地球中心的距离
+window.addEventListener('wheel', e => {
+  camDist = Math.max(2.6, Math.min(7, camDist + e.deltaY * 0.004));
+}, { passive: true });
+
+window.addEventListener('resize', () => {
+  resizeRenderer();
+});
+
+/* ==================== 点单弹窗（外卖软件风格，支持购物车多选） ==================== */
+const elFoodModal = document.getElementById('foodModal');
+const elFoodGrid = document.getElementById('foodGrid');
+const elOrderBtn = document.getElementById('orderBtn');
+const elToAddr = document.getElementById('toAddr');
+const elToBannerFlag = document.getElementById('toBannerFlag');
+const elToShopName = document.getElementById('toShopName');
+const elToShopMeta = document.getElementById('toShopMeta');
+const elToCount = document.getElementById('toCount');
+const elToTotalPrice = document.getElementById('toTotalPrice');
+let currentCountry = null;
+const cart = new Map();          // dishId -> 数量（购物车）
+
+/** 强制关闭结果弹窗（再次开始点外卖时调用；庆祝特效保留到真正下单） */
+function ensureResultClosed() {
+  if (!elResultModal.classList.contains('hidden')) {
+    closeResultModal();
+  }
+}
+
+function openFoodModal(country) {
+  ensureResultClosed();                     // 再次点外卖：先关闭庆祝页
+  currentCountry = country;
+  cart.clear();
+  // 顶部定位 + 店铺信息（用户地址默认中国）
+  elToAddr.textContent = '中国';
+  // 店铺横幅国旗：先显示本地绘制的国旗（离线100%可用），外网真实国旗加载成功则覆盖
+  elToBannerFlag.innerHTML = '';
+  const bannerImg = document.createElement('img');
+  bannerImg.alt = '';
+  bannerImg.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:12px;';
+  bannerImg.src = makeLocalFlagDataURL(country.cc);
+  elToBannerFlag.appendChild(bannerImg);
+  const fsrc = [
+    'https://cdn.jsdelivr.net/gh/hampusborgos/country-flags@main/png250px/' + country.cc + '.png',
+    'https://flagcdn.com/w160/' + country.cc + '.png',
+  ];
+  let fi = 0;
+  (function tryLoad() {
+    if (fi >= fsrc.length) return;               // 全部失败：保持本地绘制的国旗
+    const probe = new Image();
+    probe.crossOrigin = 'anonymous';
+    probe.onload = () => { bannerImg.src = probe.src; };
+    probe.onerror = () => { fi++; tryLoad(); };
+    probe.src = fsrc[fi++];
+  })();
+  elToShopName.textContent = country.name + '美食城';
+  elToShopMeta.textContent = country.name + ' 当地美食 · 好评率 ' + randInt(96, 100) + '% · 鸽子配送';
+  renderFoodList();
+  updateCartBar();
+  elFoodModal.classList.remove('hidden');
+}
+
+/** 渲染菜品列表（含购物车数量控件） */
+function renderFoodList() {
+  elFoodGrid.innerHTML = '';
+  currentCountry.dishes.forEach(id => {
+    const d = dishById(id);
+    const q = cart.get(id) || 0;
+    const item = document.createElement('div');
+    item.className = 'to-item' + (q > 0 ? ' selected' : '');
+    item.dataset.id = d.id;
+    const ctrl = q > 0
+      ? '<div class="to-qty"><button class="to-qty-btn" data-act="minus">−</button><span class="to-qty-num">' + q + '</span><button class="to-qty-btn plus" data-act="add">＋</button></div>'
+      : '<div class="to-add" data-act="add">＋</div>';
+    item.innerHTML =
+      '<div class="to-emoji">' + d.emoji + '</div>' +
+      '<div class="to-info">' +
+      '  <div class="to-name">' + d.name + '</div>' +
+      '  <div class="to-desc">' + d.desc + '</div>' +
+      '  <div class="to-price">' + d.currency + d.price + '</div>' +
+      '</div>' + ctrl;
+    elFoodGrid.appendChild(item);
+  });
+}
+
+/** 事件委托：＋/－ 按钮 或 点击行 = 加一件 */
+elFoodGrid.addEventListener('click', e => {
+  if (!currentCountry) return;
+  const btn = e.target.closest('[data-act]');
+  const row = e.target.closest('.to-item');
+  if (!row) return;
+  const id = parseInt(row.dataset.id, 10);
+  if (btn) {
+    if (btn.dataset.act === 'add') cart.set(id, (cart.get(id) || 0) + 1);
+    else {
+      const q = (cart.get(id) || 0) - 1;
+      if (q <= 0) cart.delete(id); else cart.set(id, q);
+    }
+  } else {
+    cart.set(id, (cart.get(id) || 0) + 1);
+  }
+  renderFoodList();
+  updateCartBar();
+});
+
+/** 底部结算栏：件数 + 合计金额 */
+function updateCartBar() {
+  let count = 0, total = 0;
+  cart.forEach((q, id) => {
+    count += q;
+    total += dishById(id).price * q;
+  });
+  elToCount.textContent = count;
+  elToTotalPrice.textContent = '¥' + total.toFixed(2);
+  elOrderBtn.disabled = count === 0;
+}
+
+function closeFoodModal() {
+  elFoodModal.classList.add('hidden');
+  currentCountry = null;
+}
+document.getElementById('foodClose').addEventListener('click', closeFoodModal);
+elFoodModal.addEventListener('click', e => { if (e.target === elFoodModal) closeFoodModal(); });
+
+/** 结算：把购物车转成商品列表（可多件） */
+elOrderBtn.addEventListener('click', () => {
+  if (cart.size === 0) return;
+  const items = [];
+  cart.forEach((q, id) => items.push({ dish: dishById(id), qty: q }));
+  const country = currentCountry;
+  closeFoodModal();
+  beginDelivery(country, items);
+});
+
+/* ==================== 配送流程 ==================== */
+const elTransition = document.getElementById('transitionOverlay');
+const elDeliveryPanel = document.getElementById('deliveryPanel');
+const elDpClock = document.getElementById('dpClock');
+const elDpShopLogo = document.getElementById('dpShopLogo');
+const elDpShop = document.getElementById('dpShop');
+const elDpShopMeta = document.getElementById('dpShopMeta');
+const elDpItems = document.getElementById('dpItems');
+const elDpPrice = document.getElementById('dpPrice');
+const elDpDest = document.getElementById('dpDest');
+const elDpLoc = document.getElementById('dpLoc');
+const elDpProgressFill = document.getElementById('dpProgressFill');
+const elDpPct = document.getElementById('dpPct');
+const elCancelDeliveryBtn = document.getElementById('cancelDeliveryBtn');
+let flight = null;                 // 当前配送
+let flightActive = false;
+
+/** 开始配送：过渡动画 2 秒 → 起飞（items: [{dish, qty}, ...] 可多件） */
+function beginDelivery(country, items) {
+  ensureResultClosed();                     // 确保弹窗已关
+  clearCelebration();                       // 真正下单：关闭庆祝特效（烟花/彩带/鸽子群）
+  busy = true;
+  elTransition.classList.remove('hidden');
+  setTimeout(() => {
+    elTransition.classList.add('hidden');
+    flight = new Flight(country, items);
+    flight.start();
+  }, 2000);
+}
+
+/** 根据 3D 画布实际尺寸重置渲染器（上动画/下订单分屏时画布高度会变化） */
+function resizeRenderer() {
+  const el = document.getElementById('stage');
+  const w = el.clientWidth || innerWidth;
+  const h = el.clientHeight || innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+
+/** 显示底部外卖订单栏，3D 飞行动画收缩到上方 */
+function showDeliveryPanel(f) {
+  // 店铺logo国旗：本地绘制优先，外网真图加载成功覆盖
+  elDpShopLogo.innerHTML = '';
+  const logoImg = document.createElement('img');
+  logoImg.alt = '';
+  logoImg.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:8px;';
+  logoImg.src = makeLocalFlagDataURL(f.country.cc);
+  elDpShopLogo.appendChild(logoImg);
+  loadFlagImage(f.country, img => { logoImg.src = img.src; });
+  elDpShop.textContent = f.country.name + '美食城';
+  elDpShopMeta.textContent = f.country.name + '当地美食 · 好评率 ' + randInt(96, 100) + '% · 鸽子配送';
+  // 商品列表（支持多件）
+  elDpItems.innerHTML = f.items.map(it =>
+    '<div class="dp-item">' +
+    '  <span class="dp-item-emoji">' + it.dish.emoji + '</span>' +
+    '  <span class="dp-item-name">' + it.dish.name + '</span>' +
+    '  <span class="dp-item-qty">×' + it.qty + '</span>' +
+    '  <span class="dp-item-price">¥' + (it.dish.price * it.qty).toFixed(2) + '</span>' +
+    '</div>'
+  ).join('');
+  elDpPrice.textContent = '¥' + f.totalPrice.toFixed(2);
+  updateDeliveryPanel(f);
+  elDeliveryPanel.classList.remove('hidden');
+  document.getElementById('app').classList.add('delivering');
+  requestAnimationFrame(resizeRenderer);
+  camInteract.idle = 99;        // 配送开始立即进入全局跟随
+}
+function updateDeliveryPanel(f) {
+  const mins = Math.floor(f.elapsed / 60);
+  const secs = Math.floor(f.elapsed % 60);
+  const txt = FLIGHT_TEXTS[f.textIdx % FLIGHT_TEXTS.length];
+  elDpClock.textContent = '已配送 ' + mins + ' 分 ' + secs + ' 秒';
+  elDpLoc.textContent = txt;
+  elDpDest.textContent = f.hovering ? '中国（空中盘旋中…）' : '中国（即将送达…）';
+  // 飞行路程进度：封顶 99%（永远不显示 100%，因为永远不会真正送达）
+  const t = Math.min(0.99, Math.min(1, f.elapsed / f.flightTime));
+  elDpProgressFill.style.width = (t * 100).toFixed(1) + '%';
+  elDpPct.textContent = Math.round(t * 100) + '%';
+}
+function hideDeliveryPanel() {
+  elDeliveryPanel.classList.add('hidden');
+  document.getElementById('app').classList.remove('delivering');
+  requestAnimationFrame(resizeRenderer);
+}
+
+/** 取消配送 = 忍住了没吃 = 成功 */
+elCancelDeliveryBtn.addEventListener('click', () => {
+  if (flight && !flight.done) flight.cancel();
+});
+
+/** 配送类：目标国 → 中国 的轨迹，永不真正送达；中途随机事件，最终以终结事件结束 */
+class Flight {
+  constructor(country, items) {
+    this.country = country;
+    this.items = items;                                   // [{dish, qty}, ...] 多件商品
+    this.totalPrice = items.reduce((s, it) => s + it.dish.price * it.qty, 0);
+    this.totalCal = items.reduce((s, it) => s + it.dish.cal * it.qty, 0);
+    this.flightTime = rand(1200, 1500);                        // 飞完"目标国→中国"路程 20~25 分钟
+    this.elapsed = 0;
+    this.paused = false;
+    this.currentEvent = null;
+    this.eventCount = 0;
+    this.nextEventAt = rand(600, 1200);                        // 事件间隔 10~20 分钟
+    this.maxTime = 3600;                                       // 60 分钟强制终结（保证配送能结束）
+    this.forcedEnd = false;
+    this.done = false;
+    this.hovering = false;                                   // 到达 99% 后在中国上空盘旋
+    this.hoverAngle = 0;
+    this.currentFatal = false;
+    this.textIdx = 0;
+    this.textTimer = 0;
+    this.panelTimer = 0;                                  // 面板刷新节流（0.5s 一次）
+    this.triggeredEvents = [];
+    this.lastFollow = null;
+    // 路线图
+    this.routeLine = null;
+    this.trailLine = null;
+    this.trailGeo = null;
+    this.trailPos = null;                                 // 预分配轨迹顶点（避免每帧重建几何）
+    this.routeN = 240;
+    // 路径数据：起点 = 目标国（下单地），终点 = 中国（用户收货地址）
+    this.startUnit = unitFromLatLon(country.lat, country.lon);
+    this.endUnit = unitFromLatLon(35, 105);               // 中国
+    this.qEnd = new THREE.Quaternion().setFromUnitVectors(this.startUnit, this.endUnit);
+    this.qTmp = new THREE.Quaternion();
+    this.seed = rand(0, 100);
+    this.pos = new THREE.Vector3();
+    this.dir = new THREE.Vector3(0, 0, 1);
+    // 盘旋轨道（中国上空小范围，有序不乱飞）
+    this.hoverTangent = new THREE.Vector3().crossVectors(this.endUnit, new THREE.Vector3(0, 1, 0)).normalize();
+    if (this.hoverTangent.lengthSq() < 0.1) this.hoverTangent.set(1, 0, 0);
+    this.hoverLateral = new THREE.Vector3().crossVectors(this.endUnit, this.hoverTangent).normalize();
+  }
+
+  start() {
+    flightActive = true;
+    busy = true;
+    pigeon.visible = true;
+    pigeon.scale.setScalar(pigeon.userData.scale0 || 1);
+    this.pathPoint(0.001, this.pos);
+    pigeon.position.copy(this.pos);
+    this.buildRoute();
+    showDeliveryPanel(this);
+  }
+
+  /** 生成地球表面的飞行路线图（虚线全程 + 已飞实线） */
+  buildRoute() {
+    const pts = [];
+    for (let i = 0; i <= this.routeN; i++) {
+      const v = new THREE.Vector3();
+      this.pathPoint(i / this.routeN, v);
+      pts.push(v);
+    }
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    this.routeLine = new THREE.Line(geo, new THREE.LineDashedMaterial({
+      color: 0xFFC800, dashSize: 0.07, gapSize: 0.05, transparent: true, opacity: 0.7,
+    }));
+    this.routeLine.computeLineDistances();
+    globeGroup.add(this.routeLine);
+    // 已飞轨迹（实线，随飞行增长；顶点预分配，仅更新已用范围）
+    this.trailGeo = new THREE.BufferGeometry();
+    this.trailPos = new Float32Array((this.routeN + 1) * 3);
+    this.trailGeo.setAttribute('position', new THREE.BufferAttribute(this.trailPos, 3));
+    this.trailLine = new THREE.Line(this.trailGeo, new THREE.LineBasicMaterial({ color: 0x58CC02 }));
+    this.trailLine.frustumCulled = false;
+    globeGroup.add(this.trailLine);
+  }
+
+  /** 更新已飞轨迹线（写入预分配缓冲区，避免每帧重建几何） */
+  updateTrail(t) {
+    const n = Math.max(2, Math.floor(t * this.routeN));
+    for (let i = 0; i <= n; i++) {
+      const v = new THREE.Vector3();
+      this.pathPoint(i / this.routeN, v);
+      this.trailPos[i * 3] = v.x * 1.01;          // 略高于虚线，避免 z-fighting
+      this.trailPos[i * 3 + 1] = v.y * 1.01;
+      this.trailPos[i * 3 + 2] = v.z * 1.01;
+    }
+    this.trailGeo.setDrawRange(0, n + 1);
+    this.trailGeo.attributes.position.needsUpdate = true;
+    this.trailGeo.computeBoundingSphere();
+  }
+
+  /** 当前路径点（大圆插值 + 正弦波摆动） */
+  pathPoint(t, out) {
+    this.qTmp.copy(new THREE.Quaternion()).slerp(this.qEnd, t);
+    const base = this.startUnit.clone().applyQuaternion(this.qTmp);
+    const t2 = Math.min(1, t + 0.01);
+    this.qTmp.copy(new THREE.Quaternion()).slerp(this.qEnd, t2);
+    const b2 = this.startUnit.clone().applyQuaternion(this.qTmp);
+    const dir = b2.clone().sub(base).normalize();
+    if (dir.lengthSq() < 1e-8) dir.copy(this.dir);   // 到达终点时切线趋近 0，沿用上一帧方向
+    const lateral = new THREE.Vector3().crossVectors(base, dir).normalize();
+    const radial = new THREE.Vector3().crossVectors(lateral, dir).normalize();
+    const wobA = Math.sin(t * Math.PI * 7 + this.seed) * R * 0.08;
+    const wobB = Math.sin(t * Math.PI * 5 + this.seed * 2) * R * 0.03;
+    const alt = R * 1.10 + Math.sin(t * Math.PI * 3 + this.seed * 3) * R * 0.03;   // 贴近地表飞行
+    out.copy(base).multiplyScalar(alt)
+      .addScaledVector(lateral, wobA)
+      .addScaledVector(radial, wobB);
+    this.dir.copy(dir);
+  }
+
+  update(dt) {
+    if (this.done) return;
+    // 事件播放中：只推进事件动画
+    if (this.paused) {
+      if (this.currentEvent) this.currentEvent.update(dt);
+      return;
+    }
+    this.elapsed += dt;
+    // 60 分钟上限：强制触发终结事件（保证配送一定能结束）
+    if (!this.forcedEnd && this.elapsed >= this.maxTime) {
+      this.forcedEnd = true;
+      this.triggerEvent(true);
+      return;
+    }
+    // 途中事件触发（10~20 分钟一个）
+    if (this.elapsed >= this.nextEventAt) {
+      this.triggerEvent();
+      return;
+    }
+    // 位置：沿"目标国→中国"轨迹飞行，接近中国时（99%）在终点上空小范围盘旋，永不真正送达
+    const routeT = Math.min(1, this.elapsed / this.flightTime);
+    if (routeT < 0.99) {
+      this.pathPoint(routeT, this.pos);
+      this.updateTrail(routeT);
+    } else {
+      if (!this.hovering) { this.hovering = true; this.updateTrail(0.99); }
+      this.hoverAngle += dt * 0.3;
+      const rad = R * 0.12;                                  // 小半径盘旋，有序不乱飞
+      this.pos.copy(this.endUnit).multiplyScalar(R * 1.10)
+        .addScaledVector(this.hoverTangent, Math.cos(this.hoverAngle) * rad)
+        .addScaledVector(this.hoverLateral, Math.sin(this.hoverAngle) * rad);
+      this.dir.copy(this.hoverTangent);
+    }
+    pigeon.position.copy(this.pos);
+    orientPigeon(this.pos, this.dir);
+    // 文案轮换 + 配送面板刷新（0.5s 节流，避免每帧操作 DOM）
+    this.textTimer += dt;
+    if (this.textTimer > 8) { this.textTimer = 0; this.textIdx = (this.textIdx + 1) % FLIGHT_TEXTS.length; }
+    this.panelTimer += dt;
+    if (this.panelTimer >= 0.5) {
+      this.panelTimer = 0;
+      updateDeliveryPanel(this);
+    }
+  }
+
+  /** 触发一个事件：至少飞行 20 分钟后才可能终结；forceFatal 为强制终结 */
+  triggerEvent(forceFatal) {
+    this.paused = true;
+    this.eventCount++;
+    // 前 20 分钟只出普通事件；20 分钟后 25% 概率终结；到 60 分钟强制终结
+    const canFatal = forceFatal || this.elapsed >= 1200;
+    this.currentFatal = forceFatal || (canFatal && Math.random() < 0.25);
+    const ev = pick(this.currentFatal ? EVENTS.fatal : EVENTS.normal);
+    const dur = rand(3, 5);
+    this.triggeredEvents.push(ev);
+    showEventBanner('【事件 ' + ev.n + '】' + ev.name, dur);
+    this.currentEvent = buildEventScene(ev, this, dur);
+    this.currentEvent.onStart();
+    this.eventTimer = dur;
+  }
+
+  /** 事件结束：终结事件→失败；普通事件→继续配送 */
+  onEventEnd() {
+    if (this.currentEvent) { this.currentEvent.onEnd(); this.currentEvent = null; }
+    hideBubble();
+    if (this.currentFatal) { this.fail(); return; }
+    pigeon.visible = true;
+    pigeon.scale.setScalar(pigeon.userData.scale0 || 1);
+    pigeon.rotation.set(0, 0, 0);
+    pigeon.position.copy(this.pos);
+    orientPigeon(this.pos, this.dir);
+    this.paused = false;
+    // 下一次事件再等 10~20 分钟
+    this.nextEventAt = this.elapsed + rand(600, 1200);
+  }
+
+  /** 配送失败（终结事件导致鸽子回不来） */
+  fail() {
+    if (this.done) return;
+    this.done = true;
+    flightActive = false;
+    pigeon.visible = false;
+    this.cleanupRoute();
+    hideDeliveryPanel();
+    showFailModal(this);
+  }
+
+  /** 取消配送 = 忍住没吃 = 成功 */
+  cancel() {
+    if (this.done) return;
+    this.done = true;
+    flightActive = false;
+    pigeon.visible = false;
+    this.cleanupRoute();
+    hideDeliveryPanel();
+    showSuccessModal(this);
+  }
+
+  /** 移除路线图 */
+  cleanupRoute() {
+    if (this.routeLine) {
+      globeGroup.remove(this.routeLine);
+      this.routeLine.geometry.dispose();
+      this.routeLine.material.dispose();
+      this.routeLine = null;
+    }
+    if (this.trailLine) {
+      globeGroup.remove(this.trailLine);
+      this.trailGeo.dispose();
+      this.trailLine.material.dispose();
+      this.trailLine = null;
+      this.trailGeo = null;
+    }
+  }
+}
+
+/** 让鸽子朝飞行方向（+Z 朝前） */
+function orientPigeon(pos, dir) {
+  const m = new THREE.Matrix4();
+  const up = pos.clone().normalize();
+  const target = dir.clone().negate();
+  m.lookAt(new THREE.Vector3(), target, up);
+  pigeon.quaternion.setFromRotationMatrix(m);
+}
+
+/* ==================== 失败事件场景（10 个） ==================== */
+/**
+ * buildEventScene(ev, flight, dur) -> { onStart, update(dt), onEnd }
+ * 每个事件会临时接管鸽子动画，结束后由 Flight.onEventEnd 复位。
+ */
+function buildEventScene(ev, flight, dur) {
+  const p = flight.pos.clone();
+  const dir = flight.dir.clone();
+  const up = p.clone().normalize();
+  const lateral = new THREE.Vector3().crossVectors(up, dir).normalize();
+  let t = 0;
+  const temp = [];                       // 场景中临时对象
+  const addTemp = o => { globeGroup.add(o); temp.push(o); };
+  const cleanup = () => { temp.forEach(o => { globeGroup.remove(o); }); temp.length = 0; };
+  const scene = {
+    ev, dur, t: 0,
+    onStart() {}, update() {}, onEnd() { cleanup(); },
+  };
+
+  switch (ev.n) {
+    /* ① 鸽子飞累了，在树上歇了半小时 */
+    case '①': {
+      scene.onStart = () => {
+        const tree = makeTree();
+        tree.position.copy(p).addScaledVector(up, -0.1);
+        tree.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
+        addTemp(tree);
+        showBubble('💤 Zzz');
+        pigeon.userData.treeTop = tree.position.clone().addScaledVector(up, 0.62);
+      };
+      scene.update = dt => {
+        t += dt;
+        pigeon.position.copy(pigeon.userData.treeTop);
+        pigeon.position.addScaledVector(up, Math.abs(Math.sin(t * 4)) * 0.05);   // 身体起伏
+        pigeon.rotation.set(0, 0, 0);
+      };
+      scene.onEnd = () => { cleanup(); delete pigeon.userData.treeTop; };
+      break;
+    }
+
+    /* ② 鸽子被妈妈叫回家了 */
+    case '②': {
+      let mom = null;
+      scene.onStart = () => {
+        mom = makePigeon({ color: 0xB8B8BC, scale: 1.7 });
+        mom.position.copy(p).addScaledVector(dir, 1.1);
+        addTemp(mom);
+        showBubble('😳 ？！');
+      };
+      scene.update = dt => {
+        t += dt;
+        const meet = p.clone().addScaledVector(dir, 0.45);
+        const k = Math.min(1, t / 1.5);
+        pigeon.position.lerpVectors(p, meet, k);
+        mom.position.lerpVectors(mom.position, meet.clone().addScaledVector(up, 0.15), 0.05);
+        pigeon.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+        if (t > 1.5) {          // 母子一起飞走
+          const f = 1 + (t - 1.5) * 2.5;
+          pigeon.position.addScaledVector(up, dt * 1.6);
+          mom.position.addScaledVector(up, dt * 1.6);
+          pigeon.scale.setScalar(Math.max(0.01, 1 - (t - 1.5) * 1.4));
+          mom.scale.setScalar(Math.max(0.01, 1.7 * (1 - (t - 1.5) * 1.4)));
+        }
+      };
+      break;
+    }
+
+    /* ③ 鸽子穿越到了异世界 */
+    case '③': {
+      scene.onStart = () => {
+        flashOnce(0);
+        setTimeout(vortexOn, 250);
+        showBubble('✨ 异世界！');
+      };
+      scene.update = dt => {
+        t += dt;
+        pigeon.rotation.z += dt * 7;                                        // 旋转飞行
+        const a = t * 2.4;
+        pigeon.position.copy(p)
+          .addScaledVector(lateral, Math.sin(a) * 0.5)
+          .addScaledVector(up, Math.cos(a) * 0.22 + 0.15);
+      };
+      scene.onEnd = () => {
+        vortexOff();
+        flashOnce(0);
+        hideBubble();
+        cleanup();
+      };
+      break;
+    }
+
+    /* ④ 鸽子被弹弓打下来了 */
+    case '④': {
+      let fell = false;
+      scene.onStart = () => { showBubble('💥'); };
+      scene.update = dt => {
+        t += dt;
+        const fall = Math.min(1, t / 0.9);
+        pigeon.position.copy(p).addScaledVector(up, -fall * 0.75);          // 垂直下坠
+        pigeon.rotation.x = -fall * 1.4;
+        if (!fell && t >= 0.9) {                                            // 落地散落羽毛
+          fell = true;
+          burst({ pos: pigeon.position, tex: texFeather, count: 26, speed: 0.9, life: 1.6, gravity: 0.5, size: 0.09, up });
+          pigeon.visible = false;
+        }
+      };
+      break;
+    }
+
+    /* ⑤ 鸽子迷路了 */
+    case '⑤': {
+      scene.update = dt => {
+        t += dt;
+        const a = t * 6;
+        const r = Math.max(0, 1 - t / dur) * 0.55;
+        pigeon.position.copy(p)
+          .addScaledVector(lateral, Math.cos(a) * r * 0.4)
+          .addScaledVector(up, Math.sin(a) * r * 0.2);
+        pigeon.scale.setScalar(Math.max(0.01, 1 - t / dur));
+        pigeon.rotation.y = a * 2;
+      };
+      break;
+    }
+
+    /* ⑥ 鸽子被老鹰叼走了 */
+    case '⑥': {
+      let eagle = null, grabbed = false;
+      scene.onStart = () => {
+        eagle = makeEagle();
+        eagle.position.copy(p).addScaledVector(up, 1.1);
+        addTemp(eagle);
+      };
+      scene.update = dt => {
+        t += dt;
+        if (!grabbed) {
+          eagle.position.lerpVectors(eagle.position, p, 0.12);               // 老鹰俯冲
+          eagle.lookAt(p);
+          if (t >= 0.55) { grabbed = true; showBubble('🪶'); }
+        } else {
+          // 叼走：鹰与鸽子一起上升飞走
+          pigeon.position.copy(eagle.position).addScaledVector(up, 0.1);
+          eagle.position.addScaledVector(up, dt * 1.8);
+          eagle.position.addScaledVector(lateral, -dt * 0.8);
+          eagle.rotation.z += dt * 1.5;
+          if (t > 1.2 && !scene._featherDone) {
+            scene._featherDone = true;
+            burst({ pos: pigeon.position, tex: texFeather, count: 8, speed: 0.4, life: 1.4, gravity: 0.6, size: 0.07, up });
+          }
+          const fade = Math.max(0, 1 - (t - 1.5) * 2);
+          eagle.scale.setScalar(Math.max(0.01, 1.2 * fade));
+          pigeon.scale.setScalar(Math.max(0.01, fade));
+        }
+      };
+      break;
+    }
+
+    /* ⑦ 鸽子把外卖吃了 */
+    case '⑦': {
+      scene.onStart = () => { showBubble('😋 好吃！'); };
+      scene.update = dt => {
+        t += dt;
+        const k = t / dur;
+        pigeon.userData.pouch.scale.setScalar(Math.max(0.01, 1 - k));        // 外卖盒消失
+        pigeon.scale.setScalar(1 + k * 0.35);                                // 鸽子变大
+        pigeon.userData.head.rotation.x = Math.sin(t * 14) * 0.12;           // 点头咀嚼
+        pigeon.rotation.set(0, 0, 0);
+      };
+      scene.onEnd = () => {
+        pigeon.userData.pouch.scale.setScalar(1);
+        pigeon.userData.head.rotation.x = 0;
+      };
+      break;
+    }
+
+    /* ⑧ 鸽子被外卖香晕了 */
+    case '⑧': {
+      scene.onStart = () => { showBubble('😵💫'); };
+      scene.update = dt => {
+        t += dt;
+        if (t < 0.4) {                                                      // 摇晃
+          pigeon.position.copy(p).add(new THREE.Vector3(rand(-0.03, 0.03), rand(-0.03, 0.03), 0));
+        } else if (t < 0.75) {                                              // 转圈
+          pigeon.rotation.z += dt * 9;
+        } else {                                                            // 躺倒
+          pigeon.rotation.x = Math.PI;
+          pigeon.position.copy(p).addScaledVector(up, -(t - 0.75) * 0.35);
+        }
+      };
+      break;
+    }
+
+    /* ⑨ 鸽子半路遇到对象谈恋爱去了 */
+    case '⑨': {
+      let pink = null;
+      scene.onStart = () => {
+        pink = makePigeon({ color: 0xFF9ED6, scale: 0.85 });
+        pink.position.copy(p).addScaledVector(lateral, 0.7);
+        addTemp(pink);
+      };
+      scene.update = dt => {
+        t += dt;
+        const mid = p.clone().addScaledVector(lateral, 0.35);
+        const a = t * 4;
+        pigeon.position.copy(mid).addScaledVector(lateral, Math.cos(a) * 0.28).addScaledVector(up, Math.sin(a) * 0.1);
+        pink.position.copy(mid).addScaledVector(lateral, -Math.cos(a) * 0.28).addScaledVector(up, -Math.sin(a) * 0.1);
+        pigeon.lookAt(pink.position);
+        pink.lookAt(pigeon.position);
+        if (Math.random() < 0.35) {                                         // 爱心粒子
+          burst({ pos: mid, tex: texHeart, count: 2, speed: 0.25, life: 1.2, gravity: -0.12, size: 0.09, up });
+        }
+        if (t > 2.3) {                                                      // 一起飞走
+          pigeon.position.addScaledVector(up, dt * 1.6);
+          pink.position.addScaledVector(up, dt * 1.6);
+          pigeon.scale.setScalar(Math.max(0.01, 1 - (t - 2.3) * 1.6));
+          pink.scale.setScalar(Math.max(0.01, 0.85 * (1 - (t - 2.3) * 1.6)));
+        }
+      };
+      break;
+    }
+
+    /* ⑩ 鸽子飞反了，往反方向跑了 */
+    case '⑩': {
+      scene.onStart = () => { pigeon.rotation.y = Math.PI; };               // 180° 调头
+      scene.update = dt => {
+        t += dt;
+        const speed = (0.5 + t * 1.2);
+        pigeon.position.addScaledVector(dir, -speed * dt);                  // 反方向加速飞走
+        pigeon.rotation.z += dt * 3;
+        if (t > 1.4) pigeon.scale.setScalar(Math.max(0.01, 1 - (t - 1.4) * 1.8));
+      };
+      break;
+    }
+  }
+  return scene;
+}
+
+/* ==================== 结果弹窗 + 烟花 + 奖励 ==================== */
+const elResultModal = document.getElementById('resultModal');
+const elResultTitle = document.getElementById('resultTitle');
+const elResultSub = document.getElementById('resultSub');
+const elRecapBox = document.getElementById('recapBox');
+const elEventRecap = document.getElementById('eventRecap');
+const elRewardsBox = document.getElementById('rewardsBox');
+const elRewardCal = document.getElementById('rewardCal');
+const elRewardMoney = document.getElementById('rewardMoney');
+const elAchievementBox = document.getElementById('achievementBox');
+const elAgainBtn = document.getElementById('againBtn');
+const elCalTotal = document.getElementById('calTotal');
+/* 累计计数（会话内累计，file:// 下 localStorage/sessionStorage 可能被限制，做降级处理） */
+let calTotal = 0;
+try {
+  calTotal = parseInt(sessionStorage.getItem('pigeon_cal_total') || '0', 10) || 0;
+} catch (err) { /* 忽略存储不可用 */ }
+const saveTotal = () => {
+  try { sessionStorage.setItem('pigeon_cal_total', String(calTotal)); } catch (err) {}
+};
+elCalTotal.textContent = calTotal.toLocaleString();
+
+/** 奖励计算（多件商品合计）：卡路里×1.2 取整；金额×1.2 保留两位小数 */
+function calcReward(items) {
+  const calSum = items.reduce((s, it) => s + it.dish.cal * it.qty, 0);
+  const priceSum = items.reduce((s, it) => s + it.dish.price * it.qty, 0);
+  return {
+    cal: Math.round(calSum * 1.2),
+    money: '¥' + (priceSum * 1.2).toFixed(2),
+    priceSum,
+  };
+}
+
+/* ---------- 全屏彩带雨（成功时非常震撼） ---------- */
+const Confetti = {
+  parts: [], raf: 0, running: false, ctx: null,
+  start() {
+    const c = document.getElementById('confetti');
+    c.width = innerWidth; c.height = innerHeight;
+    this.ctx = c.getContext('2d');
+    this.running = true;
+    c.classList.add('on');
+    this.parts = [];
+    for (let i = 0; i < 240; i++) this.parts.push(this.make());
+    const loop = () => {
+      if (!this.running) return;
+      this.tick();
+      this.raf = requestAnimationFrame(loop);
+    };
+    this.raf = requestAnimationFrame(loop);
+  },
+  make() {
+    return {
+      x: Math.random() * innerWidth,
+      y: -20 - Math.random() * innerHeight * 0.4,
+      w: 6 + Math.random() * 8,
+      h: 10 + Math.random() * 14,
+      color: pick(['#FFC800', '#58CC02', '#FF4444', '#4A90D9', '#FF6FA5', '#FF8C42', '#FFFFFF']),
+      vy: 1.8 + Math.random() * 2.6,
+      vx: -1 + Math.random() * 2,
+      rot: Math.random() * Math.PI,
+      vr: -0.25 + Math.random() * 0.5,
+    };
+  },
+  tick() {
+    const ctx = this.ctx, w = innerWidth, h = innerHeight;
+    ctx.clearRect(0, 0, w, h);
+    for (const p of this.parts) {
+      p.y += p.vy;
+      p.x += p.vx + Math.sin(p.y * 0.02) * 0.6;
+      p.rot += p.vr;
+      if (p.y > h + 20) { Object.assign(p, this.make()); p.y = -20; }
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    }
+  },
+  stop() {
+    this.running = false;
+    cancelAnimationFrame(this.raf);
+    const c = document.getElementById('confetti');
+    c.classList.remove('on');
+    if (this.ctx) this.ctx.clearRect(0, 0, c.width, c.height);
+    this.parts = [];
+  },
+};
+
+/* ---------- 数字滚动动画 ---------- */
+function animateNumber(el, from, to, dur = 1.4) {
+  const t0 = performance.now();
+  const step = now => {
+    const t = Math.min(1, (now - t0) / (dur * 1000));
+    const e = 1 - Math.pow(1 - t, 3);
+    el.textContent = Math.round(from + (to - from) * e).toLocaleString();
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function animateMoney(el, from, to, cur, dur = 1.4) {
+  const t0 = performance.now();
+  const step = now => {
+    const t = Math.min(1, (now - t0) / (dur * 1000));
+    const e = 1 - Math.pow(1 - t, 3);
+    el.textContent = cur + (from + (to - from) * e).toFixed(2);
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/* ---------- 3D 鸽子群竖大拇指（成功庆祝） ---------- */
+const celebratePigeons = [];
+function makeThumbSprite() {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const g = c.getContext('2d');
+  g.font = '52px "Segoe UI Emoji","Apple Color Emoji",sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('👍', 32, 38);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false }));
+  sp.scale.set(0.4, 0.4, 1);
+  sp.position.set(0, 0.26, 0);          // 鸽子头顶
+  return sp;
+}
+/** 成功时：7 只鸽子从四面八方飞向镜头，竖大拇指庆祝 */
+function spawnCelebrationPigeons() {
+  clearCelebrationPigeons();
+  for (let i = 0; i < 7; i++) {
+    const p = makePigeon();
+    p.add(makeThumbSprite());
+    const a = (i / 7) * Math.PI * 2 + Math.random() * 0.6;
+    const fwd = camera.getWorldDirection(new THREE.Vector3());
+    const center = camera.position.clone().addScaledVector(fwd, 2.6);
+    p.userData.cfg = {
+      from: camera.position.clone().add(new THREE.Vector3(Math.cos(a) * 2.8, Math.sin(a) * 1.7 + 0.6, -2.8)),
+      to: center.clone().add(new THREE.Vector3(Math.cos(a) * 1.2, Math.sin(a) * 0.72, Math.sin(a * 3) * 0.25)),
+      speed: 0.5 + Math.random() * 0.45,
+      phase: Math.random() * 100,
+      hoverA: Math.random() * Math.PI * 2,
+      progress: 0,
+      arrived: false,
+    };
+    p.position.copy(p.userData.cfg.from);
+    scene.add(p);
+    celebratePigeons.push(p);
+  }
+}
+function updateCelebration(dt) {
+  for (const p of celebratePigeons) {
+    const cfg = p.userData.cfg;
+    const face = new THREE.Vector3().subVectors(camera.position, p.position).normalize();
+    p.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), face);   // 头朝向镜头
+    if (!cfg.arrived) {
+      cfg.progress = Math.min(1, cfg.progress + dt * cfg.speed);
+      const e = 1 - Math.pow(1 - cfg.progress, 3);
+      p.position.lerpVectors(cfg.from, cfg.to, e);
+      if (cfg.progress >= 1) cfg.arrived = true;
+    } else {
+      cfg.hoverA += dt * 1.4;
+      p.position.y += Math.sin(cfg.hoverA) * 0.0015;                       // 悬停起伏
+    }
+    // 拍翅膀庆祝
+    if (p.userData.wingL) {
+      const f = Math.sin(performance.now() * 0.016 + cfg.phase) * 0.7;
+      p.userData.wingL.rotation.z = f;
+      p.userData.wingR.rotation.z = -f;
+    }
+  }
+}
+function clearCelebrationPigeons() {
+  celebratePigeons.forEach(p => scene.remove(p));
+  celebratePigeons.length = 0;
+}
+
+/** 成功：取消配送 = 忍住没吃 = 成功（非常震撼的庆祝） */
+function showSuccessModal(f) {
+  const r = calcReward(f.items);
+  const title = elResultTitle;
+  title.textContent = '🎉 忍住了！';
+  title.classList.remove('boom');
+  void title.offsetWidth;                        // 重新触发动画
+  title.classList.add('boom');
+  elResultSub.textContent = '你取消了外卖，成功管住了嘴 🐦';
+  elRecapBox.classList.remove('hidden');
+  elEventRecap.innerHTML = f.triggeredEvents.map(e => '<li>' + e.n + ' ' + e.name + '</li>').join('')
+    || '<li>（这次配送很顺利，什么都没发生）</li>';
+  elRewardsBox.classList.remove('hidden');
+  elRewardCal.textContent = '0';
+  elRewardMoney.textContent = r.money;
+  elAchievementBox.classList.remove('hidden');
+  elAchievementBox.textContent = '🏅 成就达成：外卖忍者（忍住不吃）';
+  elAgainBtn.textContent = '再来一单';
+  // 累计计数（会话内累计，仅成功时累加）
+  calTotal += r.cal;
+  saveTotal();
+  elCalTotal.textContent = calTotal.toLocaleString();
+  // ---- 震撼庆祝 ----
+  flashOnce(0);                                  // 屏幕闪白
+  spawnCelebrationPigeons();                     // 鸽子群飞来竖大拇指
+  Confetti.start();                              // 全屏彩带雨
+  animateNumber(elRewardCal, 0, r.cal);          // 数字滚动
+  animateMoney(elRewardMoney, 0, r.priceSum * 1.2, '¥');
+  elResultModal.classList.remove('hidden');
+  fireworks.start();                             // 烟花
+}
+
+/** 失败：终结事件导致鸽子回不来 */
+function showFailModal(f) {
+  const last = f.triggeredEvents[f.triggeredEvents.length - 1];
+  elResultTitle.textContent = '😵 配送失败';
+  elResultTitle.classList.remove('boom');
+  elResultSub.textContent = '鸽子' + (last ? '「' + last.name + '」' : '中途失踪') + '，外卖没送到……';
+  elRecapBox.classList.remove('hidden');
+  elEventRecap.innerHTML = f.triggeredEvents.map(e => '<li>' + e.n + ' ' + e.name + '</li>').join('');
+  elRewardsBox.classList.add('hidden');
+  elAchievementBox.classList.add('hidden');
+  elAgainBtn.textContent = '重新下单';
+  elResultModal.classList.remove('hidden');
+  // 失败不累加卡路里，不播放庆祝
+}
+
+/** 关闭结果弹窗（庆祝特效保留，等真正下单后才清理） */
+function closeResultModal() {
+  elResultModal.classList.add('hidden');
+  busy = false;                 // 允许继续体验
+}
+
+/** 真正下单时清理庆祝特效（烟花/彩带/鸽子群） */
+function clearCelebration() {
+  fireworks.stop();
+  Confetti.stop();
+  clearCelebrationPigeons();
+}
+elAgainBtn.addEventListener('click', closeResultModal);
+elResultModal.addEventListener('click', e => { if (e.target === elResultModal) closeResultModal(); });
+
+/* ---------- Canvas 2D 烟花粒子 ---------- */
+const FireworksFx = {
+  ctx: null, raf: 0, parts: [], running: false, lastSpawn: 0,
+  init() {
+    const c = document.getElementById('fireworks');
+    this.ctx = c.getContext('2d');
+  },
+  start() {
+    const c = document.getElementById('fireworks');
+    c.width = c.clientWidth; c.height = c.clientHeight;
+    this.running = true;
+    this.lastSpawn = 0;
+    const loop = now => {
+      if (!this.running) return;
+      this.tick(now);
+      this.raf = requestAnimationFrame(loop);
+    };
+    this.raf = requestAnimationFrame(loop);
+  },
+  stop() {
+    this.running = false;
+    cancelAnimationFrame(this.raf);
+    this.parts.length = 0;
+    if (this.ctx) this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
+  },
+  tick(now) {
+    const dt = 16 / 1000;
+    // 每隔 0.45s 从底部发射一发烟花
+    if (now - this.lastSpawn > 450) {
+      this.lastSpawn = now;
+      this.launch();
+    }
+    this.update(dt);
+    this.draw();
+  },
+  launch() {
+    const w = this.ctx.canvas.width, h = this.ctx.canvas.height;
+    this.parts.push({ x: rand(0.12, 0.88) * w, y: h + 10, vy: -rand(300, 480), vx: rand(-30, 30), target: rand(0.25, 0.6) * h, exploded: false, color: pick(['#FFC800', '#58CC02', '#FF4444', '#4A90D9', '#FF6FA5', '#FFFFFF']) });
+  },
+  update(dt) {
+    for (let i = this.parts.length - 1; i >= 0; i--) {
+      const p = this.parts[i];
+      if (!p.exploded) {
+        p.y += p.vy * dt; p.x += p.vx * dt;
+        if (p.y <= p.target) {
+          p.exploded = true;
+          p.life = 1;
+          p.children = [];
+          const n = 60;
+          for (let k = 0; k < n; k++) {
+            const a = (k / n) * Math.PI * 2;
+            const sp = rand(60, 190);
+            p.children.push({ x: p.x, y: p.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rand(0.5, 1) });
+          }
+        }
+      } else {
+        p.life -= dt;
+        p.children.forEach(ch => {
+          ch.x += ch.vx * dt; ch.y += ch.vy * dt;
+          ch.vy += 160 * dt; ch.life -= dt;
+        });
+        if (p.life <= 0) this.parts.splice(i, 1);
+      }
+    }
+  },
+  draw() {
+    const ctx = this.ctx, w = ctx.canvas.width, h = ctx.canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    this.parts.forEach(p => {
+      if (!p.exploded) {
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#FFC800';
+        ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+      } else {
+        p.children.forEach(ch => {
+          if (ch.life <= 0) return;
+          ctx.globalAlpha = Math.max(0, ch.life);
+          ctx.fillStyle = p.color;
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 8;
+          ctx.beginPath(); ctx.arc(ch.x, ch.y, 2.2, 0, Math.PI * 2); ctx.fill();
+        });
+      }
+    });
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  },
+};
+FireworksFx.init();
+const fireworks = FireworksFx;   // 烟花特效实例（供结果弹窗/庆祝清理使用）
+
+/* ==================== 主循环 ==================== */
+const clock = new THREE.Clock();
+// 默认视角方向（相机沿此方向观察地球，距离由滚轮调节）
+const camDir = camHomeUnit.clone();
+let cameraFollowing = false;
+let flagWaveFrame = 0;           // 旗帜法线隔帧重算标志
+
+/** 相机逻辑：配送时全局视角看完整地球（拖拽暂停，8 秒无操作自动恢复），平时回到默认视角 */
+function updateCamera(dt) {
+  const k = 1 - Math.pow(0.0005, dt);      // 平滑系数（帧率无关）
+  if (flightActive && flight) {
+    cameraFollowing = true;
+    // 鸽子（或最后已知位置）
+    let wp;
+    if (pigeon.visible) {
+      wp = new THREE.Vector3();
+      pigeon.getWorldPosition(wp);
+      flight.lastFollow = wp.clone();
+    } else if (flight.lastFollow) {
+      wp = flight.lastFollow;
+    } else {
+      wp = new THREE.Vector3();
+      pigeon.getWorldPosition(wp);
+    }
+    // 用户交互计时
+    if (camInteract.active) {
+      camInteract.idle = 0;
+    } else {
+      camInteract.idle += dt;
+    }
+    if (camInteract.idle >= 8) {
+      // 全局视角：从鸽子外侧远处看完整地球（地球只占上方画布，不被订单栏遮挡）
+      const d = Math.max(camDist, 4.5);
+      const want = wp.clone().normalize().multiplyScalar(d);
+      camera.position.lerp(want, k);
+      camera.lookAt(0, 0, 0);
+    } else {
+      // 用户自由视角：保持相机位置，看向地球中心
+      camera.lookAt(0, 0, 0);
+    }
+  } else {
+    cameraFollowing = false;
+    const want = camDir.clone().multiplyScalar(camDist);
+    camera.position.lerp(want, k);
+    camera.lookAt(0, 0, 0);
+  }
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  // 地球不自动旋转（只有用户拖拽才转动）
+
+  // 鸽子翅膀拍打动画
+  if (pigeon.visible && pigeon.userData.wingL) {
+    const f = Math.sin(performance.now() * 0.014) * 0.8;
+    pigeon.userData.wingL.rotation.z = f;
+    pigeon.userData.wingR.rotation.z = -f;
+  }
+
+  // 国旗随风飘扬（顶点波浪动画；法线隔帧重算，降低开销）
+  const wt = performance.now() * 0.001;
+  flagWaveFrame = (flagWaveFrame + 1) % 2;
+  flagWaves.forEach(f => {
+    const pos = f.geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const amp = (x + 0.11) / 0.22;                 // 靠近旗杆振幅为 0，旗尾最大
+      pos.setZ(i, Math.sin(x * f.freq - wt * f.speed + f.seed) * 0.022 * amp);
+    }
+    pos.needsUpdate = true;
+    if (flagWaveFrame === 0) f.geo.computeVertexNormals();
+  });
+
+  // 标记悬停放大（提示可点击）
+  const hoverScale = hoveredMarker ? 1.15 : 1;
+  markers.forEach(m => m.scale.setScalar(hoverScale));
+
+  // 配送更新
+  if (flightActive && flight) {
+    if (flight.paused && flight.currentEvent) {
+      flight.eventTimer -= dt;
+      flight.currentEvent.t += dt;
+      flight.currentEvent.update(dt);
+      if (flight.eventTimer <= 0) flight.onEventEnd();
+    } else {
+      flight.update(dt);
+    }
+  }
+
+  // 相机（飞行跟随 / 默认视角）
+  updateCamera(dt);
+
+  // 成功庆祝：鸽子群竖大拇指
+  updateCelebration(dt);
+
+  // 气泡与粒子
+  updateBubble();
+  updateParticles(dt);
+
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
